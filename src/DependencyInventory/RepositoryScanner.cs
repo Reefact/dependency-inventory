@@ -57,6 +57,9 @@ public sealed record ScanParallelism
     {
         if (degree is < 1 or > MaxDegree)
             throw new ArgumentException($"--parallelism doit être compris entre 1 et {MaxDegree}.");
+        // The CLI also converts numbers to the enum, so an undefined value can reach this point.
+        if (mode is { } given && !Enum.IsDefined(given))
+            throw new ArgumentException("--parallelism-mode accepte files ou repositories.");
         if (degree == 1)
             return mode is null
                 ? Sequential
