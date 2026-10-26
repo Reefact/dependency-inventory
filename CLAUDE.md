@@ -1,13 +1,13 @@
 # DependencyScanner — guide for Claude Code
 
-.NET 8 CLI that inventories the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group. The README describes usage.
+.NET 10 CLI that inventories the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group. The README describes usage.
 
 ## Build & test
 
 - Build: `dotnet build DependencyScanner.sln`
 - Test: `dotnet test DependencyScanner.sln`
-- The projects target `net8.0`. If only a newer SDK is installed, run with `DOTNET_ROLL_FORWARD=Major`.
-- CI (`.github/workflows/ci.yml`) builds and tests in Release on Ubuntu and Windows with the .NET 8 SDK.
+- The projects target `net10.0` (LTS).
+- CI (`.github/workflows/ci.yml`) builds and tests in Release on Ubuntu and Windows with the .NET 10 SDK.
 
 ## Repository map
 

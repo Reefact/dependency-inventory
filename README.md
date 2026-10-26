@@ -1,6 +1,6 @@
 # DependencyScanner
 
-CLI .NET 8 / Spectre.Console.Cli pour inventorier les références NuGet déclarées dans les dépôts Git d'un projet Azure DevOps ou d'un groupe GitLab.
+CLI .NET 10 / Spectre.Console.Cli pour inventorier les références NuGet déclarées dans les dépôts Git d'un projet Azure DevOps ou d'un groupe GitLab.
 
 Architecture : provider Git → sélection d'une branche → extraction NuGet → filtres glob/regex → rapports. Il n'existe aucun filtre implicite : un ou plusieurs patterns ou regex sont obligatoires.
 
