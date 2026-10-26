@@ -29,6 +29,14 @@ public static class ReportWriter
         return absolute;
     }
 
+    /// <summary>Writes diagnostics.json in a report directory returned by <see cref="SaveAsync"/>.</summary>
+    public static Task SaveDiagnosticsAsync(
+        IReadOnlyList<RepositoryDiagnostic> diagnostics, string directory, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(diagnostics, new JsonSerializerOptions { WriteIndented = true });
+        return File.WriteAllTextAsync(Path.Combine(directory, "diagnostics.json"), json, ct);
+    }
+
     private static string[] ToColumns(PackageOccurrence x) =>
         [x.Project, x.Repository, x.Branch, x.Commit, x.File,
             x.Package, x.Version ?? "", x.Kind.ToString(), x.VersionSource.ToString(),

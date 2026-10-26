@@ -12,14 +12,16 @@
 ## Repository map
 
 - `src/DependencyInventory/`
-  - `Program.cs`, `ScanCommand.cs`: CLI options, prompts, scan loop, console output.
+  - `Program.cs`, `ScanCommand.cs`: CLI options, prompts, validation and exit codes.
+  - `RepositoryScanner.cs`, `RepositoryDiagnostics.cs`: scan of the repositories, without console access.
+  - `ScanConsole.cs`: console output (header, messages, progress bar, summary).
   - `RepositoryProviders.cs`, `AzureDevOpsClient.cs`, `GitLabRepositoryProvider.cs`: Git hosting APIs.
   - `CredentialsFile.cs`: credentials file reading.
   - `BranchSelector.cs`: the one branch scanned per repository.
   - `NuGetDependencyParser.cs`: NuGet references extracted from project files.
   - `DependencyMatcher.cs`: `--pattern` / `--regex` filters.
   - `ReportWriter.cs`, `Models.cs`: reports and their data.
-- `tests/DependencyInventory.Tests/`: unit tests.
+- `tests/DependencyInventory.Tests/`: unit tests; `FakeRepositoryProvider` serves repositories from memory.
 - `tools/commit-lint/`, `.githooks/`: commit message lint.
 
 ## Rules
