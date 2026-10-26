@@ -126,26 +126,6 @@ public sealed class CredentialStoreTests
         string? path = null) =>
         CredentialResolver.ResolveAsync(SourceProvider.Azure, AzureUrl, useFile, path, store,
             () => Prompted, CancellationToken.None);
-
-    private sealed class MemoryStore : ICredentialStore
-    {
-        private readonly Dictionary<string, RepositoryCredentials> _entries = new();
-
-        public int Writes { get; private set; }
-        public string Name => "memory";
-
-        public RepositoryCredentials this[string key] { set => _entries[key] = value; }
-
-        public RepositoryCredentials? Read(string key) => _entries.GetValueOrDefault(key);
-
-        public void Write(string key, RepositoryCredentials credentials)
-        {
-            Writes++;
-            _entries[key] = credentials;
-        }
-
-        public bool Delete(string key) => _entries.Remove(key);
-    }
 }
 
 /// <summary>A test that needs the Windows Credential Manager; skipped elsewhere.</summary>
