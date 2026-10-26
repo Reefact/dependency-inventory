@@ -13,7 +13,7 @@ public sealed record RetryOptions
     /// <summary>First backoff step when the server gives no Retry-After; doubled at each attempt.</summary>
     public TimeSpan BaseDelay { get; init; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>Timeout of one attempt, up to the response headers; waits between attempts are not counted.</summary>
+    /// <summary>Timeout of one attempt, response body included; waits between attempts are not counted.</summary>
     public TimeSpan AttemptTimeout { get; init; } = TimeSpan.FromSeconds(120);
 }
 
@@ -99,16 +99,27 @@ public sealed class RetryHandler : DelegatingHandler
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(_options.AttemptTimeout);
+        HttpResponseMessage? response = null;
         try
         {
-            return await base.SendAsync(request, timeout.Token);
+            response = await base.SendAsync(request, timeout.Token);
+            // The clients read with ResponseHeadersRead: buffering the body here puts its transfer under
+            // the attempt timeout, and an interrupted transfer is retried like any network error.
+            await response.Content.LoadIntoBufferAsync(timeout.Token);
+            return response;
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
+            response?.Dispose();
             // Same exception type as an HttpClient.Timeout expiry, which this per-attempt timeout replaces.
             throw new TaskCanceledException(
                 $"La requête a dépassé le délai de {_options.AttemptTimeout.TotalSeconds:0} s.",
                 new TimeoutException(ex.Message, ex));
+        }
+        catch
+        {
+            response?.Dispose();
+            throw;
         }
     }
 
