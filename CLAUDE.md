@@ -27,7 +27,7 @@
 - `tools/commit-lint/`, `.githooks/`: commit message lint.
 - `CONTRIBUTING.md`: build, tests, changelog and commit conventions (the README is for users only).
 - `CHANGELOG.md`: user-facing changes, Keep a Changelog format.
-- `icon.png`, `assets/icon.svg`: the package icon and its source.
+- `icon.png`, `icon.ico`, `assets/icon.svg`: the package icon, the executable icon (Windows) and the SVG source.
 - `.github/workflows/release.yml`, `RELEASING.md`: NuGet tool publication (tag `v*`, trusted publishing).
 
 ## Rules
