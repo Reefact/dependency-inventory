@@ -106,7 +106,7 @@ dotnet test ./tests/DependencyInventory.Tests/DependencyInventory.Tests.csproj
 
 ## Messages de commit
 
-Les commits suivent [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) et sont rédigés en anglais : `<type>[(scope)][!]: <description>`, avec un type parmi feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test, une description en minuscule à l'impératif, sans point final, et un en-tête de 72 caractères au plus.
+Les commits suivent [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) et sont rédigés en anglais : `<type>[(scope)][!]: <description>`, avec un type parmi feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test, une description en minuscule à l'impératif, sans point final, et un en-tête de 72 caractères au plus. Un changement cassant se signale par un `!` avant les deux-points, par un pied `BREAKING CHANGE:` (ou `BREAKING-CHANGE:`), ou par les deux.
 
 Le workflow commit-lint vérifie chaque commit d'une pull request. Pour la même vérification en local, activer le hook une fois par clone :
 

@@ -13,8 +13,9 @@
 #
 # Exit status: 0 = conforming (or exempt), 1 = violations found, 2 = usage error.
 #
-# Only the header is validated, plus the breaking-change double signal. Bodies are prose
-# and are left alone. Whether the message is written in English is not checked.
+# Only the header is validated, plus the spelling of a breaking-change footer. Bodies are
+# prose and are left alone. Whether the message is written in English is not checked.
+# Tests: tools/commit-lint/test-lint-commit-message.sh.
 
 set -u
 
@@ -119,22 +120,10 @@ if [ "$nlines" -ge 2 ] && [ -n "$line2" ]; then
   err "leave a blank line between the header and the body"
 fi
 
-# A breaking change is signalled twice: '!' in the header and a 'BREAKING CHANGE:' footer.
-prefix="${subject%%: *}"
-has_bang=0
-case "$prefix" in *!) has_bang=1 ;; *) ;; esac
-has_breaking=0
-if printf '%s\n' "$msg" | grep -Eq '^BREAKING CHANGE: '; then
-  has_breaking=1
-fi
-if printf '%s\n' "$msg" | grep -Eq '^(BREAKING[-_]CHANGE|[Bb]reaking[ -][Cc]hange):'; then
-  err "the breaking-change footer must read exactly 'BREAKING CHANGE:'"
-fi
-if [ "$has_bang" = 1 ] && [ "$has_breaking" = 0 ]; then
-  err "a '!' in the header requires a 'BREAKING CHANGE:' footer describing the migration"
-fi
-if [ "$has_bang" = 0 ] && [ "$has_breaking" = 1 ]; then
-  err "a 'BREAKING CHANGE:' footer requires a '!' before the colon in the header"
+# A breaking change is signalled by a '!' in the header, a 'BREAKING CHANGE:' footer, or both;
+# 'BREAKING-CHANGE:' is a synonym. Only misspelled footer tokens are rejected.
+if printf '%s\n' "$msg" | grep -Eq '^(BREAKING_CHANGE|[Bb]reaking[ _-][Cc]hange):'; then
+  err "the breaking-change footer must read 'BREAKING CHANGE:' or 'BREAKING-CHANGE:', in uppercase"
 fi
 
 if [ "$errors" -gt 0 ]; then
