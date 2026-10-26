@@ -91,39 +91,31 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
 
         // Secrets are never logged; Azure uses login and PAT, GitLab the PAT alone.
         RepositoryCredentials credentials;
-        if (settings.CredentialsFile.IsSet)
+        var store = CredentialStores.ForCurrentPlatform();
+        try
         {
-            try
-            {
-                var path = CredentialsFile.ResolvePath(settings.Provider, settings.CredentialsFile.Value);
-                credentials = await CredentialsFile.ReadAsync(path, settings.Provider, cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                ScanConsole.Warning("Reading interrupted.");
-                return 130;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
-                FormatException or ArgumentException)
-            {
-                ScanConsole.Error($"Cannot read the credentials: {ex.Message}");
-                return 2;
-            }
-        }
-        else
-        {
-            var login = settings.Provider == SourceProvider.Azure
-                ? AnsiConsole.Ask<string>("[yellow]Azure DevOps login[/]:").Trim()
-                : "";
-            var pat = AnsiConsole.Prompt(
-                new TextPrompt<string>("[yellow]Platform PAT[/]:").Secret());
-            if ((settings.Provider == SourceProvider.Azure && string.IsNullOrWhiteSpace(login)) ||
-                string.IsNullOrWhiteSpace(pat))
+            var resolved = await CredentialResolver.ResolveAsync(settings.Provider, url,
+                settings.CredentialsFile.IsSet, settings.CredentialsFile.Value,
+                store, () => CredentialPrompt.Ask(settings.Provider), cancellationToken);
+            if (resolved.Credentials is null)
             {
                 ScanConsole.Error("Credentials are required.");
                 return 2;
             }
-            credentials = new RepositoryCredentials(login, pat);
+            if (resolved.Source == CredentialSource.Store)
+                ScanConsole.CredentialsFromStore(store!.Name);
+            credentials = resolved.Credentials;
+        }
+        catch (OperationCanceledException)
+        {
+            ScanConsole.Warning("Reading interrupted.");
+            return 130;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+            FormatException or ArgumentException or System.ComponentModel.Win32Exception)
+        {
+            ScanConsole.Error($"Cannot read the credentials: {ex.Message}");
+            return 2;
         }
 
         try
