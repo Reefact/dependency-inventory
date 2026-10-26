@@ -29,11 +29,11 @@ public static class NuGetDependencyParser
         foreach (var element in document.Descendants())
         {
             var name = element.Name.LocalName;
-            var kind = name switch
+            PackageKind? kind = name switch
             {
-                "PackageReference" or "GlobalPackageReference" => "Reference",
-                "PackageVersion" => "CentralVersion",
-                "package" when path.EndsWith("packages.config", StringComparison.OrdinalIgnoreCase) => "Reference",
+                "PackageReference" or "GlobalPackageReference" => PackageKind.Reference,
+                "PackageVersion" => PackageKind.CentralVersion,
+                "package" when path.EndsWith("packages.config", StringComparison.OrdinalIgnoreCase) => PackageKind.Reference,
                 _ => null
             };
             if (kind is null) continue;
@@ -46,8 +46,8 @@ public static class NuGetDependencyParser
                 (string?)element.Attribute("Version") ??
                 (string?)element.Attribute("version") ??
                 element.Elements().FirstOrDefault(x => x.Name.LocalName is "VersionOverride" or "Version")?.Value;
-            results.Add(new ParsedPackage(id, version, kind,
-                version is null ? "Unresolved" : "Explicit"));
+            results.Add(new ParsedPackage(id, version, kind.Value,
+                version is null ? VersionSource.Unresolved : VersionSource.Explicit));
         }
         return results;
     }
@@ -67,7 +67,7 @@ public static class NuGetDependencyParser
 
         var closest = centralFiles.FirstOrDefault();
         return closest.Value?
-            .FirstOrDefault(p => p.Kind == "CentralVersion" &&
+            .FirstOrDefault(p => p.Kind == PackageKind.CentralVersion &&
                 p.Id.Equals(package, StringComparison.OrdinalIgnoreCase))?.Version;
     }
 }

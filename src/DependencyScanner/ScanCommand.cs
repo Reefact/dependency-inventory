@@ -167,9 +167,9 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
                     diagnosticJson, cancellationToken);
                 AnsiConsole.MarkupLine("[blue]Diagnostic complet : diagnostics.json[/]");
             }
-            var references = occurrences.Where(x => x.Kind == "Reference").ToArray();
+            var references = occurrences.Where(x => x.Kind == PackageKind.Reference).ToArray();
             var consumers = references.Select(x => x.Repository).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-            var issues = coverage.Count(x => x.Status is "Partial" or "Failed");
+            var issues = coverage.Count(x => x.Status is CoverageStatus.Partial or CoverageStatus.Failed);
 
             var summary = new Table().Border(TableBorder.Rounded)
                 .AddColumn("Mesure").AddColumn("Valeur")
@@ -208,7 +208,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
     {
         var hits = new List<PackageOccurrence>();
         if (repo.IsDisabled)
-            return (new(repo.Project, repo.Name, null, "Disabled", 0, 0, "Dépôt désactivé"), hits);
+            return (new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Dépôt désactivé"), hits);
 
         string? branchName = null;
         int filesRead = 0;
@@ -220,7 +220,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
                 diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
             var branch = BranchSelector.Select(branches);
             if (branch is null)
-                return (new(repo.Project, repo.Name, null, "NoBranch", 0, 0, "Aucune branche Git"), hits);
+                return (new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "Aucune branche Git"), hits);
             branchName = branch.Name;
             if (diagnostic is not null)
             {
@@ -261,27 +261,28 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
 
                 var version = package.Version;
                 var source = package.VersionSource;
-                if (package.Kind == "Reference" && version is null &&
+                if (package.Kind == PackageKind.Reference && version is null &&
                     (file.Key.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
                      file.Key.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase) ||
                      file.Key.EndsWith(".vbproj", StringComparison.OrdinalIgnoreCase)))
                 {
                     version = NuGetDependencyParser.ResolveCentralVersion(file.Key, package.Id, parsedFiles);
-                    if (version is not null) source = "Central";
+                    if (version is not null) source = VersionSource.Central;
                 }
                 hits.Add(new PackageOccurrence(repo.Project, repo.Name, branch.Name,
                     branch.ObjectId, file.Key, package.Id, version, package.Kind, source,
                     matchedFilters, api.FileUrl(repo, branch.ObjectId, file.Key)));
             }
-            var status = failures.Count > 0 ? "Partial" : paths.Length == 0 ? "NoNuGetFiles" : "OK";
+            var status = failures.Count > 0 ? CoverageStatus.Partial
+                : paths.Length == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
             return (new(repo.Project, repo.Name, branchName, status,
-                filesRead, hits.Count(x => x.Kind == "Reference"),
+                filesRead, hits.Count(x => x.Kind == PackageKind.Reference),
                 failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            return (new(repo.Project, repo.Name, branchName, "Failed", filesRead, 0, ex.Message), hits);
+            return (new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits);
         }
     }
 

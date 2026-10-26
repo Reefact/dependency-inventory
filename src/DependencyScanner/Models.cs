@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace DependencyScanner;
 
 public sealed record AzureOrigin(string Organization, string Project)
@@ -23,7 +25,17 @@ public sealed record AzureOrigin(string Organization, string Project)
 public sealed record Repository(string Id, string Name, string Project, string WebUrl, bool IsDisabled);
 public sealed record GitBranch(string Name, string ObjectId);
 public sealed record GitFile(string Path, bool IsFolder);
-public sealed record ParsedPackage(string Id, string? Version, string Kind, string VersionSource);
+// Enum names are written as-is in the CSV and JSON reports: renaming a member changes the output format.
+[JsonConverter(typeof(JsonStringEnumConverter<PackageKind>))]
+public enum PackageKind { Reference, CentralVersion }
+
+[JsonConverter(typeof(JsonStringEnumConverter<VersionSource>))]
+public enum VersionSource { Explicit, Unresolved, Central }
+
+[JsonConverter(typeof(JsonStringEnumConverter<CoverageStatus>))]
+public enum CoverageStatus { OK, Partial, Failed, NoBranch, Disabled, NoNuGetFiles }
+
+public sealed record ParsedPackage(string Id, string? Version, PackageKind Kind, VersionSource VersionSource);
 
 public sealed record PackageOccurrence(
     string Project,
@@ -33,8 +45,8 @@ public sealed record PackageOccurrence(
     string File,
     string Package,
     string? Version,
-    string Kind,
-    string VersionSource,
+    PackageKind Kind,
+    VersionSource VersionSource,
     IReadOnlyList<string> MatchedFilters,
     string Url);
 
@@ -42,7 +54,7 @@ public sealed record RepositoryCoverage(
     string Project,
     string Repository,
     string? Branch,
-    string Status,
+    CoverageStatus Status,
     int FilesExamined,
     int References,
     string? Details);

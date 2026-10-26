@@ -19,19 +19,19 @@ public static class ReportWriter
             "Version", "Kind", "VersionSource", "MatchedFilters", "Url"
         };
         await WriteCsvAsync(Path.Combine(absolute, "dependencies.csv"), columns,
-            report.Occurrences.Where(x => x.Kind == "Reference").Select(ToColumns), ct);
+            report.Occurrences.Where(x => x.Kind == PackageKind.Reference).Select(ToColumns), ct);
         await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"), columns,
-            report.Occurrences.Where(x => x.Kind == "CentralVersion").Select(ToColumns), ct);
+            report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(ToColumns), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
             ["Project", "Repository", "Branch", "Status", "FilesExamined", "References", "Details"],
-            report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status,
+            report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
                 x.FilesExamined.ToString(), x.References.ToString(), x.Details ?? "" }), ct);
         return absolute;
     }
 
     private static string[] ToColumns(PackageOccurrence x) =>
         [x.Project, x.Repository, x.Branch, x.Commit, x.File,
-            x.Package, x.Version ?? "", x.Kind, x.VersionSource,
+            x.Package, x.Version ?? "", x.Kind.ToString(), x.VersionSource.ToString(),
             string.Join(" | ", x.MatchedFilters), x.Url];
 
     private static async Task WriteCsvAsync(
