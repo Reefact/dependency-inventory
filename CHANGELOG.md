@@ -19,7 +19,7 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ### Added
 
-- **A package icon**, shown on nuget.org and in NuGet clients.
+- **An icon**, on the package (shown on nuget.org and in NuGet clients) and on the Windows executable.
 
 ## [1.0.0-preview.2] - 2026-10-26
 
