@@ -74,7 +74,7 @@ Les API Git Azure DevOps et GitLab permettent de lire le même commit de manièr
 
 Une requête vers Azure DevOps ou GitLab est réessayée, jusqu'à 5 tentatives au total, quand elle échoue de façon passagère : HTTP 429 (trop de requêtes), 502, 503 ou 504 (service indisponible), erreur réseau, ou délai de réponse dépassé. L'attente suit l'en-tête Retry-After s'il est présent, sinon un délai exponentiel avec une part aléatoire ; une attente ne dépasse jamais 60 s et un message l'annonce. Les autres erreurs (400, 401, 403, 404...) ne sont pas réessayées. Quand les tentatives sont épuisées, l'erreur est reportée comme avant dans repositories.csv.
 
-Le délai de 120 s s'applique à chaque tentative, sans compter les attentes. Un délai dépassé sur un fichier rend le dépôt partiel sans interrompre le scan ; seul Ctrl+C l'interrompt.
+Le délai de 120 s s'applique à chaque tentative, lecture complète de la réponse comprise, sans compter les attentes. Un délai dépassé sur un fichier rend le dépôt partiel sans interrompre le scan ; seul Ctrl+C l'interrompt.
 
 ## Extraction NuGet
 

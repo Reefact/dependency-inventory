@@ -36,6 +36,15 @@ public sealed class RetryHandlerTests
     private static readonly Step TooManyRequests = Status(HttpStatusCode.TooManyRequests);
     private static readonly Step NetworkError = _ => throw new HttpRequestException("connection reset");
 
+    private static Step Body(string text) => _ =>
+        Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(text) });
+
+    private static readonly Step HeadersThenHangingBody = _ =>
+        Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new FaultyContent(hang: true) });
+
+    private static readonly Step HeadersThenBrokenBody = _ =>
+        Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new FaultyContent(hang: false) });
+
     private static readonly Step Hang = async ct =>
     {
         await Task.Delay(Timeout.Infinite, ct);
@@ -212,6 +221,44 @@ public sealed class RetryHandlerTests
     }
 
     [Fact]
+    public async Task ABodyThatNeverCompletesTimesOutAndIsRetried()
+    {
+        var (client, server) = Create(new RetryOptions { AttemptTimeout = TimeSpan.FromMilliseconds(50) },
+            HeadersThenHangingBody, Body("done"));
+
+        var response = await client.GetAsync("https://example.test/", HttpCompletionOption.ResponseHeadersRead);
+
+        Assert.Equal("done", await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, server.Calls);
+        Assert.IsType<TaskCanceledException>(Assert.Single(_notices).Error);
+    }
+
+    [Fact]
+    public async Task ABodyThatNeverCompletesFailsAsATimeoutWhenAttemptsAreExhausted()
+    {
+        var (client, server) = Create(
+            new RetryOptions { MaxAttempts = 2, AttemptTimeout = TimeSpan.FromMilliseconds(50) },
+            HeadersThenHangingBody, HeadersThenHangingBody);
+
+        var exception = await Assert.ThrowsAsync<TaskCanceledException>(
+            () => client.GetAsync("https://example.test/", HttpCompletionOption.ResponseHeadersRead));
+        Assert.IsType<TimeoutException>(exception.InnerException);
+        Assert.Equal(2, server.Calls);
+    }
+
+    [Fact]
+    public async Task AnInterruptedBodyIsRetried()
+    {
+        var (client, server) = Create(HeadersThenBrokenBody, Body("done"));
+
+        var response = await client.GetAsync("https://example.test/", HttpCompletionOption.ResponseHeadersRead);
+
+        Assert.Equal("done", await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, server.Calls);
+        Assert.Null(Assert.Single(_notices).Status);
+    }
+
+    [Fact]
     public async Task CancellationByTheCallerIsNeverRetried()
     {
         using var cancellation = new CancellationTokenSource();
@@ -257,6 +304,27 @@ public sealed class RetryHandlerTests
         {
             Calls++;
             return _steps.Dequeue()(cancellationToken);
+        }
+    }
+
+    /// <summary>A body whose transfer never ends, or breaks after the headers were received.</summary>
+    private sealed class FaultyContent(bool hang) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) =>
+            SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream, System.Net.TransportContext? context, CancellationToken cancellationToken)
+        {
+            await stream.WriteAsync("partial"u8.ToArray(), cancellationToken);
+            if (hang) await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new IOException("connection reset during the body");
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 
