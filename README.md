@@ -70,6 +70,19 @@ Une seule branche analysée par dépôt, dans l'ordre main → release (y compri
 
 Les API Git Azure DevOps et GitLab permettent de lire le même commit de manière cohérente, sans clone local.
 
+## Parallélisme
+
+Par défaut, le scan est séquentiel : un dépôt après l'autre, un fichier après l'autre. --parallelism (de 1 à 8) autorise plusieurs requêtes simultanées ; --parallelism-mode est alors obligatoire et choisit le niveau parallélisé :
+
+- files : un dépôt à la fois, plusieurs de ses fichiers lus en même temps ; adapté aux gros dépôts et à --repository ;
+- repositories : plusieurs dépôts en même temps, chacun lisant ses fichiers l'un après l'autre ; adapté aux groupes de nombreux petits dépôts.
+
+Un seul niveau est parallélisé : --parallelism est donc aussi le nombre maximal de requêtes HTTP simultanées. Les rapports sont identiques, dans le même ordre, quels que soient le parallélisme et le mode. Plus de parallélisme augmente le risque de HTTP 429 ; ces réponses sont réessayées (voir Erreurs transitoires), mais une valeur modérée (2 à 4) ménage les limites des plateformes.
+
+~~~powershell
+dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*" --parallelism 4 --parallelism-mode repositories
+~~~
+
 ## Erreurs transitoires
 
 Une requête vers Azure DevOps ou GitLab est réessayée, jusqu'à 5 tentatives au total, quand elle échoue de façon passagère : HTTP 429 (trop de requêtes), 502, 503 ou 504 (service indisponible), erreur réseau, ou délai de réponse dépassé. L'attente suit l'en-tête Retry-After s'il est présent, sinon un délai exponentiel avec une part aléatoire ; une attente ne dépasse jamais 60 s et un message l'annonce. Les autres erreurs (400, 401, 403, 404...) ne sont pas réessayées. Quand les tentatives sont épuisées, l'erreur est reportée comme avant dans repositories.csv.

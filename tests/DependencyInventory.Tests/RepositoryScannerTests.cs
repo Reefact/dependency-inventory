@@ -4,9 +4,11 @@ namespace DependencyInventory.Tests;
 
 public sealed class RepositoryScannerTests
 {
-    private static readonly DependencyMatcher Matcher = DependencyMatcher.Create(["Stime.*", "Serilog"], []);
+    internal static readonly DependencyMatcher Matcher = DependencyMatcher.Create(["Stime.*", "Serilog"], []);
 
-    private static FakeRepositoryProvider Provider() => new FakeRepositoryProvider()
+    /// <summary>One repository per coverage status, with central versions and unreadable files.</summary>
+    internal static FakeRepositoryProvider Provider(TimeSpan latency = default) =>
+        new FakeRepositoryProvider { Latency = latency }
         .AddRepository("api", files: new Dictionary<string, string>
         {
             ["/Directory.Packages.props"] =
@@ -135,7 +137,7 @@ public sealed class RepositoryScannerTests
         var progress = new RecordingProgress();
 
         var result = await RepositoryScanner.ScanAsync(api, RepositoryScanner.Select(api.Repositories, null),
-            Matcher, collectDiagnostics: true, progress, CancellationToken.None);
+            Matcher, collectDiagnostics: true, ScanParallelism.Sequential, progress, CancellationToken.None);
 
         Assert.Equal(6, result.Coverage.Count);
         Assert.Equal(6, result.Diagnostics.Count);
@@ -150,7 +152,7 @@ public sealed class RepositoryScannerTests
     {
         var api = Provider();
         var result = await RepositoryScanner.ScanAsync(api, api.Repositories, Matcher,
-            collectDiagnostics: false, progress: null, CancellationToken.None);
+            collectDiagnostics: false, ScanParallelism.Sequential, progress: null, CancellationToken.None);
 
         Assert.Empty(result.Diagnostics);
     }
