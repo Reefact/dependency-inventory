@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch / PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: this workflow only checks out, builds and tests.
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  build-test:
+    name: Build & test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Build and test take about a minute; fail a hung run fast instead of holding a runner for hours.
+    timeout-minutes: 15
+    strategy:
+      # Run both legs to completion so a platform-specific failure is always visible.
+      fail-fast: false
+      matrix:
+        # Windows too: the CLI is used from PowerShell and handles file paths and credentials files.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          # The projects target net8.0: test on that runtime, not on a roll-forward.
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore DependencyScanner.sln
+
+      - name: Build
+        run: dotnet build DependencyScanner.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test DependencyScanner.sln -c Release --no-build --logger "console;verbosity=normal"
