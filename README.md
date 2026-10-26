@@ -44,7 +44,7 @@ login asks once for the Azure DevOps login and PAT, or for the GitLab PAT, and s
 The system vaults are not supported yet (#16); until then, credentials are either typed at each scan, or read from a file with --credentials-file:
 
 - With --credentials-file and no value, the CLI reads .azure-credentials or .gitlab-credentials, depending on --provider, in the current folder.
-- With --credentials-file followed by a path, it uses that explicit path (e.g. "~/secrets/azure-credentials").
+- With --credentials-file followed by a path, it uses that explicit path (e.g. "$HOME/secrets/azure-credentials"; a quoted ~ is not expanded by the shell).
 
 An Azure DevOps file holds two lines, the login then the PAT; a GitLab file holds the PAT alone:
 
