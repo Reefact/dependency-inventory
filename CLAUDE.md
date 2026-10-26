@@ -32,4 +32,4 @@
 - **Read-only.** The tool never writes to Azure DevOps or GitLab: GET requests only.
 - **Secrets** (PAT, login) are never logged nor serialized.
 - **Tests and warnings.** Every behavior change comes with a test. The build treats warnings as errors.
-- **Languages.** README and CLI messages are in French; code, comments and commit messages are in English.
+- **English only.** README, CLI messages, report texts, code, comments and commit messages are in English.

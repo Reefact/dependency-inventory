@@ -9,16 +9,16 @@ public static class ScanConsole
     public static void Header()
     {
         AnsiConsole.Write(new Rule("[cyan]Dependency Inventory[/]").LeftJustified());
-        AnsiConsole.MarkupLine("Scan en lecture seule ; [bold]une branche[/] par dépôt.");
+        AnsiConsole.MarkupLine("Read-only scan; [bold]one branch[/] per repository.");
     }
 
     public static void Filters(DependencyMatcher matcher) =>
-        AnsiConsole.MarkupLine("Filtres (OU logique) : " +
+        AnsiConsole.MarkupLine("Filters (logical OR): " +
             Markup.Escape(string.Join(", ", matcher.Filters)));
 
     public static void Source(string origin, int accessible, int selected) =>
-        AnsiConsole.MarkupLine($"Source : [blue]{Markup.Escape(origin)}[/] — " +
-            $"{accessible} dépôt(s) accessibles, {selected} à analyser.");
+        AnsiConsole.MarkupLine($"Source: [blue]{Markup.Escape(origin)}[/] — " +
+            $"{accessible} accessible repositories, {selected} to scan.");
 
     public static void Error(string message) =>
         AnsiConsole.MarkupLine($"[red]{Markup.Escape(message)}[/]");
@@ -30,18 +30,18 @@ public static class ScanConsole
     {
         var cause = notice switch
         {
-            { Status: HttpStatusCode.TooManyRequests } => "Limite de requêtes atteinte (HTTP 429)",
-            { Status: { } status } => $"Service indisponible (HTTP {(int)status})",
-            { Error: TaskCanceledException } => "Délai de réponse dépassé",
-            _ => "Erreur réseau"
+            { Status: HttpStatusCode.TooManyRequests } => "Rate limit reached (HTTP 429)",
+            { Status: { } status } => $"Service unavailable (HTTP {(int)status})",
+            { Error: TaskCanceledException } => "Response timed out",
+            _ => "Network error"
         };
         AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(cause)}, " +
-            $"reprise dans {Math.Ceiling(notice.Delay.TotalSeconds):0} s " +
-            $"(tentative {notice.Attempt + 1}/{notice.MaxAttempts}).[/]");
+            $"retrying in {Math.Ceiling(notice.Delay.TotalSeconds):0} s " +
+            $"(attempt {notice.Attempt + 1}/{notice.MaxAttempts}).[/]");
     }
 
     public static void DiagnosticsWritten() =>
-        AnsiConsole.MarkupLine("[blue]Diagnostic complet : diagnostics.json[/]");
+        AnsiConsole.MarkupLine("[blue]Full diagnostics: diagnostics.json[/]");
 
     /// <summary>Runs the scan behind a progress bar with one step per repository.</summary>
     public static async Task<T> WithProgressAsync<T>(int repositories, Func<IScanProgress, Task<T>> scan)
@@ -64,17 +64,17 @@ public static class ScanConsole
         var consumers = references.Select(x => x.Repository).Distinct(StringComparer.OrdinalIgnoreCase).Count();
 
         var summary = new Table().Border(TableBorder.Rounded)
-            .AddColumn("Mesure").AddColumn("Valeur")
-            .AddRow("Dépôts analysés", analysed.ToString())
-            .AddRow("Dépôts consommateurs", consumers.ToString())
-            .AddRow("Références détectées", references.Length.ToString())
-            .AddRow("Packages distincts", references.Select(x => x.Package)
+            .AddColumn("Measure").AddColumn("Value")
+            .AddRow("Repositories scanned", analysed.ToString())
+            .AddRow("Consuming repositories", consumers.ToString())
+            .AddRow("References found", references.Length.ToString())
+            .AddRow("Distinct packages", references.Select(x => x.Package)
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString())
-            .AddRow("Dépôts en erreur ou partiels", result.IncompleteRepositories.ToString());
+            .AddRow("Failed or partial repositories", result.IncompleteRepositories.ToString());
         AnsiConsole.Write(summary);
-        AnsiConsole.MarkupLine($"Rapports : [green]{Markup.Escape(reportDirectory)}[/]");
+        AnsiConsole.MarkupLine($"Reports: [green]{Markup.Escape(reportDirectory)}[/]");
         if (result.IncompleteRepositories > 0)
-            AnsiConsole.MarkupLine("[yellow]Inspection incomplète : consulter repositories.csv.[/]");
+            AnsiConsole.MarkupLine("[yellow]Incomplete scan: see repositories.csv.[/]");
     }
 
     // Notified concurrently when repositories are scanned in parallel.

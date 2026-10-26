@@ -7,49 +7,49 @@ namespace DependencyInventory;
 public sealed class ScanSettings : CommandSettings
 {
     [CommandOption("--provider <SOURCE>", isRequired: true)]
-    [Description("Source du code : Azure ou GitLab.")]
+    [Description("Source of the code: Azure or GitLab.")]
     public SourceProvider Provider { get; init; }
 
     [CommandOption("--url")]
-    [Description("URL du projet Azure DevOps ou du groupe GitLab.")]
+    [Description("URL of the Azure DevOps project or the GitLab group.")]
     public string? Url { get; init; }
 
     [CommandOption("-o|--output")]
-    [Description("Dossier où écrire les rapports CSV et JSON.")]
+    [Description("Folder where the CSV and JSON reports are written.")]
     [DefaultValue("dependency-report")]
     public string Output { get; init; } = "dependency-report";
 
     [CommandOption("--credentials-file [PATH]")]
-    [Description("Identifiants dans un fichier ; par défaut .azure-credentials ou .gitlab-credentials.")]
+    [Description("Credentials read from a file; .azure-credentials or .gitlab-credentials by default.")]
     public required FlagValue<string?> CredentialsFile { get; init; }
 
     [CommandOption("--pattern <GLOB>")]
-    [Description("Glob de package NuGet (répétable ; * et ?).")]
+    [Description("NuGet package glob (repeatable; * and ?).")]
     public string[] Patterns { get; init; } = [];
 
     [CommandOption("--regex <EXPRESSION>")]
-    [Description("Expression régulière .NET (répétable).")]
+    [Description(".NET regular expression (repeatable).")]
     public string[] Regexes { get; init; } = [];
 
     [CommandOption("--case-sensitive")]
-    [Description("Rendre les recherches sensibles à la casse.")]
+    [Description("Make the filters case-sensitive.")]
     public bool CaseSensitive { get; init; }
 
     [CommandOption("--repository")]
-    [Description("N'analyser qu'un dépôt (utile pour diagnostiquer les références manquantes).")]
+    [Description("Scan a single repository (useful to diagnose missing references).")]
     public string? Repository { get; init; }
 
     [CommandOption("--diagnostics")]
-    [Description("Exporter les branches et toutes les références NuGet par fichier dans diagnostics.json.")]
+    [Description("Export the branches and every NuGet reference per file to diagnostics.json.")]
     public bool Diagnostics { get; init; }
 
     [CommandOption("--parallelism <N>")]
-    [Description("Nombre de requêtes simultanées, de 1 (séquentiel) à 8.")]
+    [Description("Number of simultaneous requests, from 1 (sequential) to 8.")]
     [DefaultValue(1)]
     public int Parallelism { get; init; } = 1;
 
     [CommandOption("--parallelism-mode <MODE>")]
-    [Description("Niveau parallélisé, obligatoire si --parallelism dépasse 1 : files ou repositories.")]
+    [Description("Level run in parallel, required when --parallelism is above 1: files or repositories.")]
     public ParallelismMode? ParallelismMode { get; init; }
 }
 
@@ -60,7 +60,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
     {
         ScanConsole.Header();
 
-        var url = settings.Url ?? AnsiConsole.Ask<string>("[yellow]URL de la source[/] :");
+        var url = settings.Url ?? AnsiConsole.Ask<string>("[yellow]Source URL[/]:");
         try { RepositoryProviderFactory.ValidateOrigin(settings.Provider, url); }
         catch (ArgumentException ex)
         {
@@ -75,7 +75,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
         }
         catch (ArgumentException ex)
         {
-            ScanConsole.Error($"Filtre invalide : {ex.Message}");
+            ScanConsole.Error($"Invalid filter: {ex.Message}");
             return 2;
         }
 
@@ -89,7 +89,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             return 2;
         }
 
-        // On ne journalise jamais les secrets ; Azure utilise login/PAT et GitLab le PAT seul.
+        // Secrets are never logged; Azure uses login and PAT, GitLab the PAT alone.
         RepositoryCredentials credentials;
         if (settings.CredentialsFile.IsSet)
         {
@@ -100,27 +100,27 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             }
             catch (OperationCanceledException)
             {
-                ScanConsole.Warning("Lecture interrompue.");
+                ScanConsole.Warning("Reading interrupted.");
                 return 130;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                 FormatException or ArgumentException)
             {
-                ScanConsole.Error($"Impossible de lire les identifiants : {ex.Message}");
+                ScanConsole.Error($"Cannot read the credentials: {ex.Message}");
                 return 2;
             }
         }
         else
         {
             var login = settings.Provider == SourceProvider.Azure
-                ? AnsiConsole.Ask<string>("[yellow]Login Azure DevOps[/] :").Trim()
+                ? AnsiConsole.Ask<string>("[yellow]Azure DevOps login[/]:").Trim()
                 : "";
             var pat = AnsiConsole.Prompt(
-                new TextPrompt<string>("[yellow]PAT de la plateforme[/] :").Secret());
+                new TextPrompt<string>("[yellow]Platform PAT[/]:").Secret());
             if ((settings.Provider == SourceProvider.Azure && string.IsNullOrWhiteSpace(login)) ||
                 string.IsNullOrWhiteSpace(pat))
             {
-                ScanConsole.Error("Identifiants obligatoires.");
+                ScanConsole.Error("Credentials are required.");
                 return 2;
             }
             credentials = new RepositoryCredentials(login, pat);
@@ -134,7 +134,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             var selectedRepositories = RepositoryScanner.Select(repositories, settings.Repository);
             if (selectedRepositories.Count == 0)
             {
-                ScanConsole.Error($"Dépôt introuvable : {settings.Repository ?? ""}");
+                ScanConsole.Error($"Repository not found: {settings.Repository ?? ""}");
                 return 2;
             }
 
@@ -156,7 +156,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            ScanConsole.Warning("Scan interrompu.");
+            ScanConsole.Warning("Scan interrupted.");
             return 130;
         }
         catch (HttpRequestException ex)
@@ -166,7 +166,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
         }
         catch (Exception ex)
         {
-            ScanConsole.Error($"Échec : {ex.Message}");
+            ScanConsole.Error($"Failed: {ex.Message}");
             return 1;
         }
     }

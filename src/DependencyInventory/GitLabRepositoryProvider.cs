@@ -19,7 +19,7 @@ public sealed record GitLabOrigin(string BaseUrl, string GroupPath)
             uri.UserInfo.Length != 0 ||
             !string.IsNullOrEmpty(uri.Query) ||
             !string.IsNullOrEmpty(uri.Fragment))
-            throw new ArgumentException("URL GitLab attendue : https://gitlab.example.com/groupe/sous-groupe");
+            throw new ArgumentException("Expected GitLab URL: https://gitlab.example.com/group/subgroup");
 
         var parts = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries)
             .Select(Uri.UnescapeDataString).ToArray();
@@ -27,7 +27,7 @@ public sealed record GitLabOrigin(string BaseUrl, string GroupPath)
         if (parts.Length == 0 || parts.Any(p => string.IsNullOrWhiteSpace(p) ||
             p is "." or ".." || p.Contains('/') || p.Contains('\\')) ||
             (parts.Length >= 2 && parts[0] == "api" && parts[1] == "v4"))
-            throw new ArgumentException("L'URL GitLab doit désigner un groupe (ou sous-groupe).");
+            throw new ArgumentException("The GitLab URL must designate a group (or subgroup).");
 
         return new GitLabOrigin(uri.GetLeftPart(UriPartial.Authority), string.Join("/", parts));
     }
@@ -45,7 +45,7 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
     public GitLabRepositoryProvider(GitLabOrigin origin, string pat, Action<RetryNotice>? onRetry = null)
     {
         if (string.IsNullOrWhiteSpace(pat))
-            throw new ArgumentException("Un jeton d'accès GitLab est nécessaire.");
+            throw new ArgumentException("A GitLab access token is required.");
 
         _origin = origin;
         _apiBase = origin.BaseUrl + "/api/v4";
@@ -121,7 +121,7 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                throw new InvalidOperationException("Réponse GitLab inattendue : tableau JSON attendu.");
+                throw new InvalidOperationException("Unexpected GitLab response: a JSON array was expected.");
 
             var values = doc.RootElement.EnumerateArray().ToArray();
             results.AddRange(values.Select(v => v.Clone()));
@@ -138,13 +138,13 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
             response.Dispose();
-            throw new HttpRequestException("GitLab : accès refusé. Vérifier le PAT (read_api) et les droits sur le groupe.");
+            throw new HttpRequestException("GitLab: access denied. Check the PAT (read_api) and the permissions on the group.");
         }
         if (!response.IsSuccessStatusCode)
         {
             var code = (int)response.StatusCode;
             response.Dispose();
-            throw new HttpRequestException($"GitLab : HTTP {code} (groupe, dépôt ou fichier inaccessible).");
+            throw new HttpRequestException($"GitLab: HTTP {code} (group, repository or file not accessible).");
         }
         return response;
     }

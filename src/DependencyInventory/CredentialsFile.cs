@@ -24,7 +24,7 @@ public static class CredentialsFile
         string path, SourceProvider provider, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("Le chemin du fichier d'identifiants est vide.");
+            throw new ArgumentException("The credentials file path is empty.");
 
         var contents = await File.ReadAllTextAsync(path, Encoding.UTF8, cancellationToken);
         return Parse(contents, provider);
@@ -45,13 +45,13 @@ public static class CredentialsFile
             case SourceProvider.Azure:
                 if (lines.Count != 2 || lines[0].Length == 0 || lines[1].Length == 0)
                     throw new FormatException(
-                        "Azure : fichier attendu sur deux lignes non vides : login puis PAT.");
+                        "Azure: expected a file of two non-empty lines: the login, then the PAT.");
                 return new RepositoryCredentials(lines[0], lines[1]);
 
             case SourceProvider.GitLab:
                 if (lines.Count != 1 || lines[0].Length == 0)
                     throw new FormatException(
-                        "GitLab : fichier attendu sur une seule ligne non vide : PAT.");
+                        "GitLab: expected a file of one non-empty line: the PAT.");
                 return new RepositoryCredentials("", lines[0]);
 
             default:

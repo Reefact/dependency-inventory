@@ -19,7 +19,7 @@ public static class BranchSelector
                 b.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
             if (exact is not null) return exact;
 
-            // Les branches release/* sont considérées dans la famille release.
+            // release/* branches belong to the release family.
             if (name == "release")
             {
                 var release = available.FirstOrDefault(b =>
