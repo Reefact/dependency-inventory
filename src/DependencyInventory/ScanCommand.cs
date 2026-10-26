@@ -42,6 +42,15 @@ public sealed class ScanSettings : CommandSettings
     [CommandOption("--diagnostics")]
     [Description("Exporter les branches et toutes les références NuGet par fichier dans diagnostics.json.")]
     public bool Diagnostics { get; init; }
+
+    [CommandOption("--parallelism <N>")]
+    [Description("Nombre de requêtes simultanées, de 1 (séquentiel) à 8.")]
+    [DefaultValue(1)]
+    public int Parallelism { get; init; } = 1;
+
+    [CommandOption("--parallelism-mode <MODE>")]
+    [Description("Niveau parallélisé, obligatoire si --parallelism dépasse 1 : files ou repositories.")]
+    public ParallelismMode? ParallelismMode { get; init; }
 }
 
 public sealed class ScanCommand : AsyncCommand<ScanSettings>
@@ -71,6 +80,14 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
         }
 
         ScanConsole.Filters(matcher);
+
+        ScanParallelism parallelism;
+        try { parallelism = ScanParallelism.Create(settings.Parallelism, settings.ParallelismMode); }
+        catch (ArgumentException ex)
+        {
+            ScanConsole.Error(ex.Message);
+            return 2;
+        }
 
         // On ne journalise jamais les secrets ; Azure utilise login/PAT et GitLab le PAT seul.
         RepositoryCredentials credentials;
@@ -124,7 +141,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             ScanConsole.Source(api.Origin, repositories.Count, selectedRepositories.Count);
             var result = await ScanConsole.WithProgressAsync(selectedRepositories.Count, progress =>
                 RepositoryScanner.ScanAsync(api, selectedRepositories, matcher, settings.Diagnostics,
-                    progress, cancellationToken));
+                    parallelism, progress, cancellationToken));
 
             var report = new ScanReport(DateTimeOffset.UtcNow, api.Origin, matcher.Filters,
                 result.Occurrences, result.Coverage);

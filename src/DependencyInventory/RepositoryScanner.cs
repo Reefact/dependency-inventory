@@ -21,6 +21,53 @@ public sealed record ScanResult(
         Coverage.Count(x => x.Status is CoverageStatus.Partial or CoverageStatus.Failed);
 }
 
+public enum ParallelismMode
+{
+    /// <summary>One repository at a time, several of its files read at once.</summary>
+    Files,
+
+    /// <summary>Several repositories at once, each reading its files one after the other.</summary>
+    Repositories
+}
+
+/// <summary>
+/// How many requests may run at once (--parallelism) and at which level (--parallelism-mode). Only one
+/// level runs in parallel, so the degree is also the maximum number of simultaneous HTTP requests.
+/// </summary>
+public sealed record ScanParallelism
+{
+    public const int MaxDegree = 8;
+
+    public static readonly ScanParallelism Sequential = new(1, ParallelismMode.Files);
+
+    public int Degree { get; }
+    public ParallelismMode Mode { get; }
+
+    private ScanParallelism(int degree, ParallelismMode mode)
+    {
+        Degree = degree;
+        Mode = mode;
+    }
+
+    internal int RepositoryDegree => Mode == ParallelismMode.Repositories ? Degree : 1;
+    internal int FileDegree => Mode == ParallelismMode.Files ? Degree : 1;
+
+    /// <summary>Validates the two options together; the mode is required above 1 and refused at 1.</summary>
+    public static ScanParallelism Create(int degree, ParallelismMode? mode)
+    {
+        if (degree is < 1 or > MaxDegree)
+            throw new ArgumentException($"--parallelism doit être compris entre 1 et {MaxDegree}.");
+        if (degree == 1)
+            return mode is null
+                ? Sequential
+                : throw new ArgumentException("--parallelism-mode n'a d'effet qu'avec --parallelism supérieur à 1.");
+        return mode is { } value
+            ? new ScanParallelism(degree, value)
+            : throw new ArgumentException(
+                "--parallelism-mode est obligatoire quand --parallelism dépasse 1 : files ou repositories.");
+    }
+}
+
 /// <summary>Scans repositories through a provider; no console access, so it can be tested directly.</summary>
 public static class RepositoryScanner
 {
@@ -31,27 +78,33 @@ public static class RepositoryScanner
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+    /// <summary>
+    /// Scans the repositories; the result lists them in the given order whatever the parallelism.
+    /// The progress is notified concurrently in <see cref="ParallelismMode.Repositories"/> mode.
+    /// </summary>
     public static async Task<ScanResult> ScanAsync(IRepositoryProvider api,
         IReadOnlyList<Repository> repositories, DependencyMatcher matcher, bool collectDiagnostics,
-        IScanProgress? progress, CancellationToken ct)
+        ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct)
     {
-        var occurrences = new List<PackageOccurrence>();
-        var coverage = new List<RepositoryCoverage>();
-        var diagnostics = new List<RepositoryDiagnostic>();
-        foreach (var repo in repositories)
-        {
-            ct.ThrowIfCancellationRequested();
-            progress?.RepositoryStarted(repo);
-            var diagnostic = collectDiagnostics
-                ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
-                : null;
-            var result = await ScanRepositoryAsync(api, repo, matcher, diagnostic, ct);
-            occurrences.AddRange(result.Occurrences);
-            coverage.Add(result.Coverage);
-            if (diagnostic is not null) diagnostics.Add(diagnostic);
-            progress?.RepositoryCompleted(repo);
-        }
-        return new ScanResult(occurrences, coverage, diagnostics);
+        var results = new (RepositoryScanResult Scan, RepositoryDiagnostic? Diagnostic)[repositories.Count];
+        await Parallel.ForEachAsync(Enumerable.Range(0, repositories.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = parallelism.RepositoryDegree, CancellationToken = ct },
+            async (index, token) =>
+            {
+                var repo = repositories[index];
+                progress?.RepositoryStarted(repo);
+                var diagnostic = collectDiagnostics
+                    ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
+                    : null;
+                var scan = await ScanRepositoryAsync(api, repo, matcher, diagnostic, token, parallelism.FileDegree);
+                results[index] = (scan, diagnostic);
+                progress?.RepositoryCompleted(repo);
+            });
+
+        return new ScanResult(
+            results.SelectMany(x => x.Scan.Occurrences).ToArray(),
+            results.Select(x => x.Scan.Coverage).ToArray(),
+            results.Where(x => x.Diagnostic is not null).Select(x => x.Diagnostic!).ToArray());
     }
 
     /// <summary>
@@ -59,7 +112,8 @@ public static class RepositoryScanner
     /// never thrown, except cancellation.
     /// </summary>
     public static async Task<RepositoryScanResult> ScanRepositoryAsync(IRepositoryProvider api,
-        Repository repo, DependencyMatcher matcher, RepositoryDiagnostic? diagnostic, CancellationToken ct)
+        Repository repo, DependencyMatcher matcher, RepositoryDiagnostic? diagnostic, CancellationToken ct,
+        int fileParallelism = 1)
     {
         var hits = new List<PackageOccurrence>();
         if (repo.IsDisabled)
@@ -87,25 +141,37 @@ public static class RepositoryScanner
                 .Select(x => x.Path).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
 
             // Toutes les références proviennent EXCLUSIVEMENT de ce commit.
+            // Files may be read in parallel; their results are then taken in path order.
+            var reads = new FileDiagnostic[paths.Length];
+            await Parallel.ForEachAsync(Enumerable.Range(0, paths.Length),
+                new ParallelOptions { MaxDegreeOfParallelism = fileParallelism, CancellationToken = ct },
+                async (index, token) =>
+                {
+                    var path = paths[index];
+                    try
+                    {
+                        var content = await api.GetFileAsync(repo.Id, branch.ObjectId, path, token);
+                        reads[index] = new FileDiagnostic(path, content.Length,
+                            NuGetDependencyParser.Parse(path, content), null);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                    catch (Exception ex)
+                    {
+                        reads[index] = new FileDiagnostic(path, null, [], ex.Message);
+                    }
+                });
+
             var parsedFiles = new Dictionary<string, IReadOnlyList<ParsedPackage>>(
                 StringComparer.OrdinalIgnoreCase);
-            foreach (var path in paths)
+            foreach (var read in reads)
             {
-                ct.ThrowIfCancellationRequested();
-                try
+                diagnostic?.Files.Add(read);
+                if (read.Error is null)
                 {
-                    var content = await api.GetFileAsync(repo.Id, branch.ObjectId, path, ct);
-                    var packages = NuGetDependencyParser.Parse(path, content);
-                    parsedFiles[path] = packages;
-                    diagnostic?.Files.Add(new FileDiagnostic(path, content.Length, packages, null));
+                    parsedFiles[read.Path] = read.Packages;
                     filesRead++;
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-                catch (Exception ex)
-                {
-                    failures.Add($"{path}: {ex.Message}");
-                    diagnostic?.Files.Add(new FileDiagnostic(path, null, [], ex.Message));
-                }
+                else failures.Add($"{read.Path}: {read.Error}");
             }
 
             foreach (var file in parsedFiles)

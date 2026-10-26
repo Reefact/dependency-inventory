@@ -8,7 +8,16 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
     private readonly Dictionary<(string Repository, string Path), Exception> _failingFiles = new();
     private readonly HashSet<string> _failingBranches = [];
 
+    private int _inFlight;
+    private int _maxInFlight;
+
     public List<Repository> Repositories { get; } = [];
+
+    /// <summary>Delay of every call, so parallel calls overlap.</summary>
+    public TimeSpan Latency { get; init; }
+
+    /// <summary>Highest number of calls observed in progress at the same time.</summary>
+    public int MaxConcurrentCalls => Volatile.Read(ref _maxInFlight);
 
     public string Origin => "https://dev.azure.com/acme/project";
 
@@ -37,20 +46,37 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
         Task.FromResult<IReadOnlyList<Repository>>(Repositories);
 
     public Task<IReadOnlyList<GitBranch>> GetBranchesAsync(string repositoryId, CancellationToken ct) =>
-        _failingBranches.Contains(repositoryId)
+        CallAsync(() => _failingBranches.Contains(repositoryId)
             ? throw new HttpRequestException("branches unavailable")
-            : Task.FromResult(_branches[repositoryId]);
+            : _branches[repositoryId], ct);
 
     public Task<IReadOnlyList<GitFile>> GetTreeAsync(string repositoryId, string commitId, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<GitFile>>(_files[repositoryId].Keys
+        CallAsync<IReadOnlyList<GitFile>>(() => _files[repositoryId].Keys
             .Select(path => new GitFile(path, false))
             .Append(new GitFile("/src", true))
-            .ToArray());
+            .ToArray(), ct);
 
     public Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct) =>
-        _failingFiles.TryGetValue((repositoryId, path), out var error)
+        CallAsync(() => _failingFiles.TryGetValue((repositoryId, path), out var error)
             ? throw error
-            : Task.FromResult(_files[repositoryId][path]);
+            : _files[repositoryId][path], ct);
+
+    private async Task<T> CallAsync<T>(Func<T> call, CancellationToken ct)
+    {
+        var inFlight = Interlocked.Increment(ref _inFlight);
+        try
+        {
+            int max;
+            while (inFlight > (max = Volatile.Read(ref _maxInFlight)) &&
+                Interlocked.CompareExchange(ref _maxInFlight, inFlight, max) != max) { }
+            if (Latency > TimeSpan.Zero) await Task.Delay(Latency, ct);
+            return call();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _inFlight);
+        }
+    }
 
     public string FileUrl(Repository repository, string commitId, string path) =>
         $"{repository.WebUrl}/{commitId}{path}";

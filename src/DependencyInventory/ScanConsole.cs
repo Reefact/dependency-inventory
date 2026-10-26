@@ -77,11 +77,19 @@ public static class ScanConsole
             AnsiConsole.MarkupLine("[yellow]Inspection incomplète : consulter repositories.csv.[/]");
     }
 
+    // Notified concurrently when repositories are scanned in parallel.
     private sealed class ProgressBar(ProgressTask task) : IScanProgress
     {
-        public void RepositoryStarted(Repository repository) =>
-            task.Description = Markup.Escape(repository.Name);
+        private readonly Lock _lock = new();
 
-        public void RepositoryCompleted(Repository repository) => task.Increment(1);
+        public void RepositoryStarted(Repository repository)
+        {
+            lock (_lock) task.Description = Markup.Escape(repository.Name);
+        }
+
+        public void RepositoryCompleted(Repository repository)
+        {
+            lock (_lock) task.Increment(1);
+        }
     }
 }
