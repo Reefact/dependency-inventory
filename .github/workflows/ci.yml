@@ -53,3 +53,9 @@ jobs:
 
       - name: Test
         run: dotnet test DependencyInventory.sln -c Release --no-build --logger "console;verbosity=normal"
+
+      # Rehearse the packaging on every run (one leg is enough: the package does not depend on the OS), so a
+      # packing regression shows up here instead of on a release tag. Nothing is published.
+      - name: Pack (smoke test, no publish)
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet pack src/DependencyInventory/DependencyInventory.csproj -c Release --no-build -p:Version=0.0.0-ci -o artifacts

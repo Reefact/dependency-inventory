@@ -5,7 +5,32 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!-- .NET tool identity. The package is Reefact.DependencyInventory; the command is `depinv`. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>depinv</ToolCommandName>
+    <PackageId>Reefact.DependencyInventory</PackageId>
+
+    <!-- Local/dev fallback only: the release workflow overrides it with -p:Version taken from the Git tag (v*). -->
+    <Version>0.1.0-dev</Version>
+
+    <Authors>Sylvain AURAT</Authors>
+    <Copyright>© Sylvain Aurat 2026</Copyright>
+    <Description>depinv inventories the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group, and writes CSV and JSON reports.</Description>
+    <PackageTags>nuget;dependencies;inventory;azure-devops;gitlab;dotnet-tool;cli</PackageTags>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Reefact/dependency-inventory</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Reefact/dependency-inventory.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Source Link ships with the .NET SDK: these properties are enough to make the package debuggable. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />
   </ItemGroup>

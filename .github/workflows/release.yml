@@ -1,0 +1,184 @@
+name: release
+
+on:
+  push:
+    # Publish on a semantic-version tag: v1.2.3, v1.2.3-beta.1.
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version, without the v prefix (e.g. 1.2.3; a dry run can use any SemVer, e.g. 0.0.0-dry.1)'
+        required: true
+      # Everything runs up to AND INCLUDING the attestation and the OIDC login, so a dry run exercises the
+      # trusted publishing policy; only the steps that publish (NuGet push, GitHub Release) are skipped.
+      # Defaults to true so an accidental dispatch publishes nothing.
+      dry_run:
+        description: 'Dry run: stop after pack + attestation + NuGet login; skip the publish steps (NuGet push, GitHub Release)'
+        type: boolean
+        default: true
+
+# Never publish the same ref twice concurrently.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Read-only by default; the single job below widens only the scopes it needs.
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  NUGET_FEED: 'https://api.nuget.org/v3/index.json'
+
+jobs:
+  pack-push:
+    name: Pack & push NuGet
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # Create the GitHub Release and upload the attested .nupkg as its asset. Nothing writes to main.
+      contents: write
+      # Request a GitHub OIDC token, exchanged for a short-lived NuGet API key via trusted publishing
+      # (no long-lived NUGET_API_KEY secret is stored).
+      id-token: write
+      # Store the signed build-provenance attestation, verifiable with `gh attestation verify`.
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # Branch protection protects branches, not tags: a tag can point at a commit that never went through
+      # review or CI, and nuget.org versions are immutable. A commit reachable from main provably passed the
+      # checks that protect main. Skipped on workflow_dispatch, whose ref is already a branch.
+      - name: Refuse to publish a commit that is not on main
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --quiet
+          if git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "ok: $GITHUB_SHA is on main"
+          else
+            echo "::error::The tagged commit $GITHUB_SHA is not an ancestor of main, so it never passed the checks that protect it. Refusing to publish. Tag a commit that is on main."
+            exit 1
+          fi
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        # The tag name and the manual input are attacker-controllable: read them through the environment and
+        # validate against a strict SemVer allowlist instead of interpolating them into the script.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${REF_NAME#v}"
+          fi
+          # Build metadata (+...) is rejected: NuGet drops it from the package identity, so a re-tag of an
+          # already published version would turn into a green no-op under --skip-duplicate.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Invalid version '$VERSION'; expected a SemVer value like 1.2.3 or 1.2.3-beta.1 (build metadata '+...' is not allowed: NuGet drops it from the package identity)."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved release version: $VERSION"
+
+      # `gh release create --target` only applies when the tag does not exist yet. A manual re-run of a
+      # version whose tag already exists, from another commit, would publish this commit's package under the
+      # old tag: package, attestation and tag would then describe different commits. Refuse it up front.
+      - name: Refuse a version whose tag points at another commit
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if tag_sha="$(git rev-parse --verify --quiet "refs/tags/v${VERSION}^{commit}")"; then
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag v${VERSION} already exists on ${tag_sha}, not on the commit being released (${GITHUB_SHA}). Re-run the workflow from that tag, or release another version."
+              exit 1
+            fi
+          fi
+
+      - name: Restore
+        run: dotnet restore DependencyInventory.sln
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet build DependencyInventory.sln -c Release --no-restore -p:Version="$VERSION" -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test DependencyInventory.sln -c Release --no-build
+
+      - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: dotnet pack src/DependencyInventory/DependencyInventory.csproj -c Release --no-build -p:Version="$VERSION" -o artifacts
+
+      - name: Upload packages as build artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: nupkgs
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
+      # Runs BEFORE both publications on purpose: only attested artifacts are ever released or pushed. The
+      # attestation covers the bytes packed here (published verbatim as the GitHub Release asset); nuget.org
+      # re-signs every upload, so its copy has another checksum.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/*.nupkg
+
+      # Trusted publishing: exchange the job's OIDC token for a short-lived, single-use NuGet API key.
+      # Needs a trusted publishing policy on nuget.org (owner Reefact / repo dependency-inventory /
+      # workflow release.yml) and the NUGET_USER repository VARIABLE set to the nuget.org username (profile
+      # name, not the email). See RELEASING.md.
+      # Runs on a dry run too: the exchange is what validates the policy, so a missing or misconfigured
+      # policy fails red here instead of during a real release.
+      - name: NuGet login (OIDC)
+        id: nuget-login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Push to NuGet
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push "artifacts/*.nupkg" \
+            --api-key "$NUGET_API_KEY" \
+            --source "$NUGET_FEED" \
+            --skip-duplicate
+
+      # --target pins the tag to the commit that was built and attested when dispatched manually. The
+      # fallback keeps a re-run idempotent if the release already exists.
+      - name: Publish GitHub Release with the attested package
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          # A SemVer pre-release label marks the GitHub Release as a pre-release, as NuGet lists it.
+          PRERELEASE=false
+          case "$VERSION" in *-*) PRERELEASE=true ;; esac
+          gh release create "$TAG" artifacts/*.nupkg \
+            --title "$TAG" --generate-notes --target "$GITHUB_SHA" --prerelease="$PRERELEASE" \
+          || { gh release upload "$TAG" artifacts/*.nupkg --clobber \
+                 && gh release edit "$TAG" --prerelease="$PRERELEASE"; }

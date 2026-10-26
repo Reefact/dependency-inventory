@@ -4,12 +4,20 @@
 
 Architecture: Git provider → branch selection → NuGet extraction → glob/regex filters → reports. There is no implicit filter: one or more patterns or regexes are required.
 
+## Installation
+
+~~~powershell
+dotnet tool install --global Reefact.DependencyInventory
+~~~
+
+The command is then available as `depinv` (`depinv --help`). To update it, run `dotnet tool update --global Reefact.DependencyInventory`. From a clone of the repository, replace `depinv` in the examples below with `dotnet run --project ./src/DependencyInventory --`.
+
 ## Azure DevOps
 
 The URL designates the Azure DevOps project, not a Git repository.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*"
+depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*"
 ~~~
 
 The Azure DevOps login and PAT are needed (see Authentication); the PAT needs the Code (Read) scope.
@@ -19,7 +27,7 @@ The Azure DevOps login and PAT are needed (see Authentication); the PAT needs th
 The URL designates the GitLab group, possibly a subgroup, for example https://gitlab.example.com/red/web. Projects of subgroups are included.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Stime.*"
+depinv --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Stime.*"
 ~~~
 
 Only a PAT is needed (see Authentication), with the read_api scope and access rights on the group. The GitLab provider uses PRIVATE-TOKEN; no login is needed.
@@ -31,8 +39,8 @@ Credentials are resolved in this order: a credentials file when --credentials-fi
 ### Windows: store the credentials once
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- login --provider azure --url "https://dev.azure.com/Organization/Project"
-dotnet run --project ./src/DependencyInventory -- login --provider gitlab --url "https://gitlab.example.com/red/web"
+depinv login --provider azure --url "https://dev.azure.com/Organization/Project"
+depinv login --provider gitlab --url "https://gitlab.example.com/red/web"
 ~~~
 
 login asks once for the Azure DevOps login and PAT, or for the GitLab PAT, and stores them in the Windows Credential Manager, encrypted with your Windows account. There is one entry per Azure DevOps organization and per GitLab instance. Scans then use them without prompting; a scan never writes to the vault. logout, with the same options, deletes them.
@@ -63,11 +71,11 @@ Repeatable options, combined with OR:
 - --case-sensitive: optional; matching is case-insensitive by default.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
+depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
 
-dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --regex "^Serilog([.]|$)"
+depinv --provider gitlab --url "https://gitlab.example.com/red/web" --regex "^Serilog([.]|$)"
 
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
+depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
 ~~~
 
 Each dependency appears once per declaration, even when it matches several filters. The MatchedFilters column keeps the filters that found the package.
@@ -88,7 +96,7 @@ By default the scan is sequential: one repository after the other, one file afte
 Only one level runs in parallel, so --parallelism is also the maximum number of simultaneous HTTP requests. Reports are identical, in the same order, whatever the parallelism and the mode. More parallelism raises the risk of HTTP 429; such responses are retried (see Transient errors), but a moderate value (2 to 4) reduces the risk of hitting the providers' rate limits.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Stime.*" --parallelism 4 --parallelism-mode repositories
+depinv --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Stime.*" --parallelism 4 --parallelism-mode repositories
 ~~~
 
 ## Transient errors
@@ -119,7 +127,7 @@ CSV files are UTF-8 with BOM and semicolon-separated.
 ## Diagnosing a repository
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*" --repository api-order-bo --diagnostics
+depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*" --repository api-order-bo --diagnostics
 ~~~
 
 The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined.
