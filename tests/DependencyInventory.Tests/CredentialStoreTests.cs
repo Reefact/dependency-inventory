@@ -25,15 +25,14 @@ public sealed class CredentialStoreTests
     }
 
     [Fact]
-    public async Task TheCredentialsFileComesFirst()
+    public async Task WithoutAVaultTheCredentialsFileIsRead()
     {
-        var store = new MemoryStore { [CredentialStores.KeyFor(SourceProvider.Azure, AzureUrl)] = Stored };
         var path = Path.GetTempFileName();
         try
         {
             await File.WriteAllTextAsync(path, "carol@company.com\nfile-pat");
 
-            var resolved = await ResolveAsync(store, useFile: true, path);
+            var resolved = await ResolveAsync(store: null, useFile: true, path);
 
             Assert.Equal(CredentialSource.File, resolved.Source);
             Assert.Equal(new RepositoryCredentials("carol@company.com", "file-pat"), resolved.Credentials);
@@ -42,6 +41,16 @@ public sealed class CredentialStoreTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public async Task WithAVaultTheCredentialsFileIsRefused()
+    {
+        var store = new MemoryStore { [CredentialStores.KeyFor(SourceProvider.Azure, AzureUrl)] = Stored };
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(
+            () => ResolveAsync(store, useFile: true, "unused"));
+        Assert.Contains("dependency-inventory login", exception.Message);
     }
 
     [Fact]

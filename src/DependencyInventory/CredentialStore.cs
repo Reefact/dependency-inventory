@@ -48,12 +48,20 @@ public static class CredentialResolver
     /// Credentials file when requested, then the vault entry, then the prompt. Never writes to the vault:
     /// only the login command does. File errors are left to the caller.
     /// </summary>
+    /// <exception cref="NotSupportedException">
+    /// A credentials file is requested on a system with a vault: files are only accepted where no vault is
+    /// supported yet, until they are removed.
+    /// </exception>
     public static async Task<ResolvedCredentials> ResolveAsync(SourceProvider provider, string url,
         bool useFile, string? filePath, ICredentialStore? store, Func<RepositoryCredentials?> prompt,
         CancellationToken ct)
     {
         if (useFile)
         {
+            if (store is not null)
+                throw new NotSupportedException(
+                    $"--credentials-file is not available with the {store.Name}: store the credentials " +
+                    "once with \"dependency-inventory login\".");
             var path = CredentialsFile.ResolvePath(provider, filePath);
             return new(await CredentialsFile.ReadAsync(path, provider, ct), CredentialSource.File);
         }
