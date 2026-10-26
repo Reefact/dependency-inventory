@@ -20,7 +20,8 @@ public sealed class ScanSettings : CommandSettings
     public string Output { get; init; } = "dependency-report";
 
     [CommandOption("--credentials-file [PATH]")]
-    [Description("Credentials read from a file; .azure-credentials or .gitlab-credentials by default.")]
+    [Description("Credentials read from a file; .azure-credentials or .gitlab-credentials by default. " +
+        "Linux and macOS only: on Windows, use the login command.")]
     public required FlagValue<string?> CredentialsFile { get; init; }
 
     [CommandOption("--pattern <GLOB>")]
@@ -105,6 +106,11 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             if (resolved.Source == CredentialSource.Store)
                 ScanConsole.CredentialsFromStore(store!.Name);
             credentials = resolved.Credentials;
+        }
+        catch (NotSupportedException ex)
+        {
+            ScanConsole.Error(ex.Message);
+            return 2;
         }
         catch (OperationCanceledException)
         {

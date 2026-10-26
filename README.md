@@ -9,43 +9,51 @@ Architecture: Git provider → branch selection → NuGet extraction → glob/re
 The URL designates the Azure DevOps project, not a Git repository.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "Stime.*"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*"
 ~~~
 
-The .azure-credentials file in the current folder holds two lines:
-
-~~~text
-firstname.lastname@company.com
-AZURE_DEVOPS_PAT
-~~~
-
-The Azure DevOps PAT needs the Code (Read) scope.
+The Azure DevOps login and PAT are needed (see Authentication); the PAT needs the Code (Read) scope.
 
 ## GitLab
 
 The URL designates the GitLab group, possibly a subgroup, for example https://gitlab.example.com/red/web. Projects of subgroups are included.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*"
+dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Stime.*"
 ~~~
 
-The .gitlab-credentials file in the current folder holds a single line:
-
-~~~text
-GITLAB_PAT
-~~~
-
-Use a GitLab PAT with the read_api scope and access rights on the group. The GitLab provider uses PRIVATE-TOKEN; no extra login is needed.
+Only a PAT is needed (see Authentication), with the read_api scope and access rights on the group. The GitLab provider uses PRIVATE-TOKEN; no login is needed.
 
 ## Authentication
 
-The --credentials-file option is optional.
+Credentials are resolved in this order: a credentials file when --credentials-file is given (Linux and macOS only), then the credentials stored in the system vault, then an interactive prompt.
 
-- Without the option, the CLI asks for the credentials interactively.
-- With --credentials-file and no value, it reads .azure-credentials or .gitlab-credentials, depending on --provider, in the current folder.
-- With --credentials-file followed by a path, it uses that explicit path (e.g. "C:\Secrets\mytoken.txt").
+### Windows: store the credentials once
 
-Credentials files hold secrets in clear text: do not commit them, restrict their permissions and use read-only tokens. The default files are excluded by .gitignore.
+~~~powershell
+dotnet run --project ./src/DependencyInventory -- login --provider azure --url "https://dev.azure.com/Organization/Project"
+dotnet run --project ./src/DependencyInventory -- login --provider gitlab --url "https://gitlab.example.com/red/web"
+~~~
+
+login asks once for the Azure DevOps login and PAT, or for the GitLab PAT, and stores them in the Windows Credential Manager, encrypted with your Windows account. There is one entry per Azure DevOps organization and per GitLab instance. Scans then use them without prompting; a scan never writes to the vault. logout, with the same options, deletes them.
+
+--credentials-file is not available on Windows.
+
+### Linux and macOS: credentials file or prompt
+
+The system vaults are not supported yet (#16); until then, credentials are either typed at each scan, or read from a file with --credentials-file:
+
+- With --credentials-file and no value, the CLI reads .azure-credentials or .gitlab-credentials, depending on --provider, in the current folder.
+- With --credentials-file followed by a path, it uses that explicit path (e.g. "~/secrets/azure-credentials").
+
+An Azure DevOps file holds two lines, the login then the PAT; a GitLab file holds the PAT alone:
+
+~~~text
+firstname.lastname@company.com
+AZURE_DEVOPS_PAT
+~~~
+
+Credentials files hold secrets in clear text: do not commit them, restrict their permissions and use read-only tokens. The default files are excluded by .gitignore. Credentials files will be removed once the macOS and Linux vaults are supported.
 
 ## NuGet filtering
 
@@ -55,11 +63,11 @@ Repeatable options, combined with OR:
 - --case-sensitive: optional; matching is case-insensitive by default.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
 
-dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --regex "^Serilog([.]|$)"
+dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --regex "^Serilog([.]|$)"
 
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
 ~~~
 
 Each dependency appears once per declaration, even when it matches several filters. The MatchedFilters column keeps the filters that found the package.
@@ -80,7 +88,7 @@ By default the scan is sequential: one repository after the other, one file afte
 Only one level runs in parallel, so --parallelism is also the maximum number of simultaneous HTTP requests. Reports are identical, in the same order, whatever the parallelism and the mode. More parallelism raises the risk of HTTP 429; such responses are retried (see Transient errors), but a moderate value (2 to 4) reduces the risk of hitting the providers' rate limits.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*" --parallelism 4 --parallelism-mode repositories
+dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Stime.*" --parallelism 4 --parallelism-mode repositories
 ~~~
 
 ## Transient errors
@@ -111,7 +119,7 @@ CSV files are UTF-8 with BOM and semicolon-separated.
 ## Diagnosing a repository
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "Stime.*" --repository api-order-bo --diagnostics
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Stime.*" --repository api-order-bo --diagnostics
 ~~~
 
 The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined.
