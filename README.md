@@ -31,14 +31,16 @@ There is no implicit filter: one or more `--pattern` or `--regex` options are re
 ## 📦 Install
 
 ~~~powershell
-dotnet tool install --global Reefact.DependencyInventory
+dotnet tool install --global Reefact.DependencyInventory --prerelease
 ~~~
 
 The command is then available as `depinv` (`depinv --help`). To update it:
 
 ~~~powershell
-dotnet tool update --global Reefact.DependencyInventory
+dotnet tool update --global Reefact.DependencyInventory --prerelease
 ~~~
+
+`--prerelease` is required while only preview versions are published (1.0.0 is not released yet): without it, the install fails with "no stable version". Drop it once a stable version exists.
 
 It needs the .NET 10 runtime.
 
