@@ -1,0 +1,73 @@
+using System.Xml.Linq;
+
+namespace DependencyScanner;
+
+public static class NuGetDependencyParser
+{
+    public static bool IsInterestingFile(string path)
+    {
+        var normalized = path.Replace('\\', '/');
+        if (new[] { "/bin/", "/obj/", "/node_modules/", "/.git/" }
+            .Any(x => normalized.Contains(x, StringComparison.OrdinalIgnoreCase))) return false;
+
+        return normalized.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".vbproj", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".props", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith(".targets", StringComparison.OrdinalIgnoreCase) ||
+            normalized.EndsWith("/packages.config", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Returns all declared NuGet packages, including centrally declared versions.
+    /// Does not evaluate MSBuild conditions or imports.
+    /// </summary>
+    public static IReadOnlyList<ParsedPackage> Parse(string path, string xml)
+    {
+        var document = XDocument.Parse(xml);
+        var results = new List<ParsedPackage>();
+        foreach (var element in document.Descendants())
+        {
+            var name = element.Name.LocalName;
+            var kind = name switch
+            {
+                "PackageReference" or "GlobalPackageReference" => "Reference",
+                "PackageVersion" => "CentralVersion",
+                "package" when path.EndsWith("packages.config", StringComparison.OrdinalIgnoreCase) => "Reference",
+                _ => null
+            };
+            if (kind is null) continue;
+
+            var id = (string?)element.Attribute(name == "package" ? "id" : "Include") ??
+                (string?)element.Attribute("Update");
+            if (string.IsNullOrWhiteSpace(id)) continue;
+
+            var version = (string?)element.Attribute("VersionOverride") ??
+                (string?)element.Attribute("Version") ??
+                (string?)element.Attribute("version") ??
+                element.Elements().FirstOrDefault(x => x.Name.LocalName is "VersionOverride" or "Version")?.Value;
+            results.Add(new ParsedPackage(id, version, kind,
+                version is null ? "Unresolved" : "Explicit"));
+        }
+        return results;
+    }
+
+    public static string? ResolveCentralVersion(
+        string projectFile,
+        string package,
+        IReadOnlyDictionary<string, IReadOnlyList<ParsedPackage>> files)
+    {
+        // Only the nearest Directory.Packages.props is automatically imported by NuGet.
+        var projectDirectory = projectFile[..(projectFile.LastIndexOf('/') + 1)];
+        var centralFiles = files
+            .Where(f => f.Key.EndsWith("/Directory.Packages.props", StringComparison.OrdinalIgnoreCase))
+            .Where(f => projectDirectory.StartsWith(
+                f.Key[..(f.Key.LastIndexOf('/') + 1)], StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(f => f.Key.Length);
+
+        var closest = centralFiles.FirstOrDefault();
+        return closest.Value?
+            .FirstOrDefault(p => p.Kind == "CentralVersion" &&
+                p.Id.Equals(package, StringComparison.OrdinalIgnoreCase))?.Version;
+    }
+}
