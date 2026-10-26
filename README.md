@@ -44,6 +44,13 @@ dotnet tool update --global DependencyInventory --prerelease
 
 It needs the .NET 10 runtime.
 
+Coming from `Reefact.DependencyInventory` (versions 1.0.0-preview.1 and 1.0.0-preview.2)? The package was renamed and both provide the `depinv` command, so remove the old one before installing the new one:
+
+~~~powershell
+dotnet tool uninstall --global Reefact.DependencyInventory
+dotnet tool install --global DependencyInventory --prerelease
+~~~
+
 ## 🚀 Quick start
 
 ### Azure DevOps

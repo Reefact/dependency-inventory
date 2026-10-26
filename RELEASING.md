@@ -16,11 +16,11 @@ Run the **release** workflow manually (Actions → release → Run workflow) wit
 
 Before tagging, turn the `## [Unreleased]` heading of [CHANGELOG.md](CHANGELOG.md) into `## [<version>] - <date>`, add a fresh empty `## [Unreleased]` above it, and merge that change to `main`.
 
-Then tag a commit that is on `main` and push the tag:
+Then create a **new** tag on a commit that is on `main` (never reuse the tag of an already published version) and push it. The example below releases `1.0.0-preview.3`; replace the version with the one of your release:
 
 ~~~bash
-git tag v1.0.0-preview.1
-git push origin v1.0.0-preview.1
+git tag v1.0.0-preview.3
+git push origin v1.0.0-preview.3
 ~~~
 
-The tag (without the `v`) becomes the package version; a label such as `v1.0.0-preview.1` makes a pre-release. The workflow refuses a tag that is not on `main`, publishes the package on nuget.org and attaches the attested `.nupkg` to a GitHub Release. nuget.org versions are immutable: a published version cannot be replaced.
+The tag (without the `v`) becomes the package version; a label such as `v1.0.0-preview.3` makes a pre-release. The workflow refuses a tag that is not on `main`, publishes the package on nuget.org and attaches the attested `.nupkg` to a GitHub Release. nuget.org versions are immutable: a published version cannot be replaced.
