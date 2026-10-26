@@ -100,7 +100,7 @@ public static class RepositoryScanner
                     diagnostic?.Files.Add(new FileDiagnostic(path, content.Length, packages, null));
                     filesRead++;
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
                     failures.Add($"{path}: {ex.Message}");
@@ -132,7 +132,7 @@ public static class RepositoryScanner
                 filesRead, hits.Count(x => x.Kind == PackageKind.Reference),
                 failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits);
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits);
