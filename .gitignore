@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+TestResults/
+**/TestResults/
+dependency-report/
+*.user
+
+# Jetons d'accès privés : ne jamais les commiter
+.azure-credentials
+.gitlab-credentials
+*.credentials
+*.auth
+credentials.txt
