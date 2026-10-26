@@ -35,7 +35,7 @@ public sealed class DependencyMatcher
         foreach (var pattern in globs ?? [])
         {
             if (string.IsNullOrWhiteSpace(pattern))
-                throw new ArgumentException("Un glob ne peut pas être vide.");
+                throw new ArgumentException("A glob cannot be empty.");
 
             // '*' = any sequence, '?' = exactly one character, other characters literal.
             var regex = "^" + Regex.Escape(pattern).Replace(@"\*", ".*").Replace(@"\?", ".") + "$";
@@ -46,7 +46,7 @@ public sealed class DependencyMatcher
         foreach (var expression in expressions ?? [])
         {
             if (string.IsNullOrWhiteSpace(expression))
-                throw new ArgumentException("Une expression régulière ne peut pas être vide.");
+                throw new ArgumentException("A regular expression cannot be empty.");
 
             try
             {
@@ -56,13 +56,13 @@ public sealed class DependencyMatcher
             catch (ArgumentException exception)
             {
                 throw new ArgumentException(
-                    $"Expression régulière invalide '{expression}' : {exception.Message}",
+                    $"Invalid regular expression '{expression}': {exception.Message}",
                     nameof(expressions), exception);
             }
         }
 
         if (rules.Count == 0)
-            throw new ArgumentException("Indiquer au moins un --pattern ou un --regex.");
+            throw new ArgumentException("Specify at least one --pattern or --regex.");
 
         return new DependencyMatcher(rules);
     }

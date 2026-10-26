@@ -113,7 +113,7 @@ public sealed class RetryHandler : DelegatingHandler
             response?.Dispose();
             // Same exception type as an HttpClient.Timeout expiry, which this per-attempt timeout replaces.
             throw new TaskCanceledException(
-                $"La requête a dépassé le délai de {_options.AttemptTimeout.TotalSeconds:0} s.",
+                $"The request exceeded the {_options.AttemptTimeout.TotalSeconds:0} s timeout.",
                 new TimeoutException(ex.Message, ex));
         }
         catch

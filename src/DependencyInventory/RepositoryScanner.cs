@@ -56,18 +56,18 @@ public sealed record ScanParallelism
     public static ScanParallelism Create(int degree, ParallelismMode? mode)
     {
         if (degree is < 1 or > MaxDegree)
-            throw new ArgumentException($"--parallelism doit être compris entre 1 et {MaxDegree}.");
+            throw new ArgumentException($"--parallelism must be between 1 and {MaxDegree}.");
         // The CLI also converts numbers to the enum, so an undefined value can reach this point.
         if (mode is { } given && !Enum.IsDefined(given))
-            throw new ArgumentException("--parallelism-mode accepte files ou repositories.");
+            throw new ArgumentException("--parallelism-mode accepts files or repositories.");
         if (degree == 1)
             return mode is null
                 ? Sequential
-                : throw new ArgumentException("--parallelism-mode n'a d'effet qu'avec --parallelism supérieur à 1.");
+                : throw new ArgumentException("--parallelism-mode only applies when --parallelism is above 1.");
         return mode is { } value
             ? new ScanParallelism(degree, value)
             : throw new ArgumentException(
-                "--parallelism-mode est obligatoire quand --parallelism dépasse 1 : files ou repositories.");
+                "--parallelism-mode is required when --parallelism is above 1: files or repositories.");
     }
 }
 
@@ -120,7 +120,7 @@ public static class RepositoryScanner
     {
         var hits = new List<PackageOccurrence>();
         if (repo.IsDisabled)
-            return new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Dépôt désactivé"), hits);
+            return new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), hits);
 
         string? branchName = null;
         int filesRead = 0;
@@ -132,7 +132,7 @@ public static class RepositoryScanner
                 diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
             var branch = BranchSelector.Select(branches);
             if (branch is null)
-                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "Aucune branche Git"), hits);
+                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"), hits);
             branchName = branch.Name;
             if (diagnostic is not null)
             {
@@ -143,7 +143,7 @@ public static class RepositoryScanner
             var paths = tree.Where(x => !x.IsFolder && NuGetDependencyParser.IsInterestingFile(x.Path))
                 .Select(x => x.Path).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
 
-            // Toutes les références proviennent EXCLUSIVEMENT de ce commit.
+            // Every reference comes from this single commit.
             // Files may be read in parallel; their results are then taken in path order.
             var reads = new FileDiagnostic[paths.Length];
             await Parallel.ForEachAsync(Enumerable.Range(0, paths.Length),

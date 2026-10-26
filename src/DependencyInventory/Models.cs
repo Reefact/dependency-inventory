@@ -12,12 +12,12 @@ public sealed record AzureOrigin(string Organization, string Project)
             !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
             !uri.Host.Equals("dev.azure.com", StringComparison.OrdinalIgnoreCase) ||
             uri.Port != 443 || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
-            throw new ArgumentException("URL attendue : https://dev.azure.com/organisation/projet");
+            throw new ArgumentException("Expected URL: https://dev.azure.com/organization/project");
 
         var parts = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries)
             .Select(Uri.UnescapeDataString).ToArray();
         if (parts.Length != 2 || parts.Any(x => string.IsNullOrWhiteSpace(x) || x is "." or ".." || x.Contains('/') || x.Contains('\\')))
-            throw new ArgumentException("Indiquer l'URL du projet, sans nom de dépôt Git.");
+            throw new ArgumentException("Give the project URL, without a Git repository name.");
         return new AzureOrigin(parts[0], parts[1]);
     }
 }

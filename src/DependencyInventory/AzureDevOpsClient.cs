@@ -58,7 +58,7 @@ public sealed class AzureDevOpsClient : IDisposable
                 property.ValueKind == JsonValueKind.String)
                 continuation = property.GetString();
             if (!string.IsNullOrEmpty(continuation) && !tokensSeen.Add(continuation))
-                throw new InvalidOperationException("Pagination des branches en boucle.");
+                throw new InvalidOperationException("Branch pagination is looping.");
         } while (!string.IsNullOrEmpty(continuation));
         return branches;
     }
@@ -114,13 +114,13 @@ public sealed class AzureDevOpsClient : IDisposable
         if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
         {
             response.Dispose();
-            throw new HttpRequestException("Accès refusé : vérifier le PAT (Code: Read) et les droits sur le projet.");
+            throw new HttpRequestException("Access denied: check the PAT (Code: Read) and the permissions on the project.");
         }
         if (!response.IsSuccessStatusCode)
         {
             var status = (int)response.StatusCode;
             response.Dispose();
-            throw new HttpRequestException($"Azure DevOps a renvoyé HTTP {status}.");
+            throw new HttpRequestException($"Azure DevOps returned HTTP {status}.");
         }
         return response;
     }

@@ -55,6 +55,15 @@ public sealed class RepositoryScannerTests
         Assert.Equal(expected, result.Coverage.Status);
     }
 
+    [Theory]
+    [InlineData("old", "Repository disabled")]
+    [InlineData("nobranch", "No Git branch")]
+    public async Task CoverageDetailsAreWrittenInEnglish(string repository, string expected)
+    {
+        var result = await ScanAsync(Provider(), repository);
+        Assert.Equal(expected, result.Coverage.Details);
+    }
+
     [Fact]
     public async Task MatchingReferencesAreReportedWithTheirCentralVersion()
     {

@@ -1,120 +1,120 @@
 # DependencyInventory
 
-CLI .NET 10 / Spectre.Console.Cli pour inventorier les références NuGet déclarées dans les dépôts Git d'un projet Azure DevOps ou d'un groupe GitLab.
+.NET 10 / Spectre.Console.Cli CLI that inventories the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group.
 
-Architecture : provider Git → sélection d'une branche → extraction NuGet → filtres glob/regex → rapports. Il n'existe aucun filtre implicite : un ou plusieurs patterns ou regex sont obligatoires.
+Architecture: Git provider → branch selection → NuGet extraction → glob/regex filters → reports. There is no implicit filter: one or more patterns or regexes are required.
 
 ## Azure DevOps
 
-L'URL désigne le projet Azure DevOps, et non un dépôt Git.
+The URL designates the Azure DevOps project, not a Git repository.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "Stime.*"
 ~~~
 
-Le fichier .azure-credentials dans le dossier courant contient deux lignes :
+The .azure-credentials file in the current folder holds two lines:
 
 ~~~text
-prenom.nom@entreprise.fr
-PAT_AZURE_DEVOPS
+firstname.lastname@company.com
+AZURE_DEVOPS_PAT
 ~~~
 
-Le PAT Azure DevOps doit avoir le droit Code (Read).
+The Azure DevOps PAT needs the Code (Read) scope.
 
 ## GitLab
 
-L'URL désigne le groupe GitLab, éventuellement un sous-groupe, par exemple https://gitlab.example.com/red/web. Les projets des sous-groupes sont inclus.
+The URL designates the GitLab group, possibly a subgroup, for example https://gitlab.example.com/red/web. Projects of subgroups are included.
 
 ~~~powershell
 dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*"
 ~~~
 
-Le fichier .gitlab-credentials dans le dossier courant contient une seule ligne :
+The .gitlab-credentials file in the current folder holds a single line:
 
 ~~~text
-PAT_GITLAB
+GITLAB_PAT
 ~~~
 
-Utiliser un PAT GitLab avec le scope read_api et les droits d'accès au groupe. Le fournisseur GitLab utilise PRIVATE-TOKEN ; aucun login supplémentaire n'est requis.
+Use a GitLab PAT with the read_api scope and access rights on the group. The GitLab provider uses PRIVATE-TOKEN; no extra login is needed.
 
-## Authentification
+## Authentication
 
-L'option --credentials-file est facultative.
+The --credentials-file option is optional.
 
-- Sans l'option, le CLI demande les identifiants en mode interactif.
-- Avec --credentials-file sans valeur, il lit .azure-credentials ou .gitlab-credentials selon --provider, dans le dossier courant.
-- Avec --credentials-file suivi d'un chemin, il utilise ce chemin explicite (p. ex. "C:\Secrets\mytoken.txt").
+- Without the option, the CLI asks for the credentials interactively.
+- With --credentials-file and no value, it reads .azure-credentials or .gitlab-credentials, depending on --provider, in the current folder.
+- With --credentials-file followed by a path, it uses that explicit path (e.g. "C:\Secrets\mytoken.txt").
 
-Les fichiers de credentials contiennent des secrets en clair : ne pas les commiter, limiter leurs permissions et utiliser des jetons en lecture seule. Les fichiers par défaut sont exclus par .gitignore.
+Credentials files hold secrets in clear text: do not commit them, restrict their permissions and use read-only tokens. The default files are excluded by .gitignore.
 
-## Filtrage NuGet
+## NuGet filtering
 
-Options répétables et combinées par OU :
-- --pattern "Stime.*" : glob appliqué à l'identifiant complet. * = zéro ou plusieurs caractères, ? = exactement un caractère. Les points sont littéraux.
-- --regex "^Serilog([.]|$)" : regex .NET, recherche de sous-chaîne (sauf ancres).
-- --case-sensitive : optionnel, la recherche est insensible à la casse par défaut.
+Repeatable options, combined with OR:
+- --pattern "Stime.*": glob applied to the whole package ID. * = zero or more characters, ? = exactly one character. Dots are literal.
+- --regex "^Serilog([.]|$)": .NET regex, substring search (unless anchored).
+- --case-sensitive: optional; matching is case-insensitive by default.
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
 
 dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --regex "^Serilog([.]|$)"
 
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
 ~~~
 
-Chaque dépendance apparaît une seule fois par déclaration, même si elle correspond à plusieurs critères. La colonne MatchedFilters conserve les critères qui ont trouvé le package.
+Each dependency appears once per declaration, even when it matches several filters. The MatchedFilters column keeps the filters that found the package.
 
-## Sélection des branches
+## Branch selection
 
-Une seule branche analysée par dépôt, dans l'ordre main → release (y compris release/*) → develop → dev → première autre branche (alphabétique). Pas de repli sur une seconde branche en cas d'absence de dépendances.
+A single branch is scanned per repository, in the order main → release (release/* included) → develop → dev → first other branch (alphabetical). There is no fallback to a second branch when no dependency is found.
 
-Les API Git Azure DevOps et GitLab permettent de lire le même commit de manière cohérente, sans clone local.
+The Azure DevOps and GitLab Git APIs read the same commit consistently, without a local clone.
 
-## Parallélisme
+## Parallelism
 
-Par défaut, le scan est séquentiel : un dépôt après l'autre, un fichier après l'autre. --parallelism (de 1 à 8) autorise plusieurs requêtes simultanées ; --parallelism-mode est alors obligatoire et choisit le niveau parallélisé :
+By default the scan is sequential: one repository after the other, one file after the other. --parallelism (1 to 8) allows several simultaneous requests; --parallelism-mode is then required and chooses the level run in parallel:
 
-- files : un dépôt à la fois, plusieurs de ses fichiers lus en même temps ; adapté aux gros dépôts et à --repository ;
-- repositories : plusieurs dépôts en même temps, chacun lisant ses fichiers l'un après l'autre ; adapté aux groupes de nombreux petits dépôts.
+- files: one repository at a time, several of its files read at once; suited to large repositories and to --repository;
+- repositories: several repositories at once, each reading its files one after the other; suited to groups of many small repositories.
 
-Un seul niveau est parallélisé : --parallelism est donc aussi le nombre maximal de requêtes HTTP simultanées. Les rapports sont identiques, dans le même ordre, quels que soient le parallélisme et le mode. Plus de parallélisme augmente le risque de HTTP 429 ; ces réponses sont réessayées (voir Erreurs transitoires), mais une valeur modérée (2 à 4) ménage les limites des plateformes.
+Only one level runs in parallel, so --parallelism is also the maximum number of simultaneous HTTP requests. Reports are identical, in the same order, whatever the parallelism and the mode. More parallelism raises the risk of HTTP 429; such responses are retried (see Transient errors), but a moderate value (2 to 4) spares the platforms' limits.
 
 ~~~powershell
 dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*" --parallelism 4 --parallelism-mode repositories
 ~~~
 
-## Erreurs transitoires
+## Transient errors
 
-Une requête vers Azure DevOps ou GitLab est réessayée, jusqu'à 5 tentatives au total, quand elle échoue de façon passagère : HTTP 429 (trop de requêtes), 502, 503 ou 504 (service indisponible), erreur réseau, ou délai de réponse dépassé. L'attente suit l'en-tête Retry-After s'il est présent, sinon un délai exponentiel avec une part aléatoire ; une attente ne dépasse jamais 60 s et un message l'annonce. Les autres erreurs (400, 401, 403, 404...) ne sont pas réessayées. Quand les tentatives sont épuisées, l'erreur est reportée comme avant dans repositories.csv.
+A request to Azure DevOps or GitLab is retried, up to 5 attempts in total, when it fails transiently: HTTP 429 (too many requests), 502, 503 or 504 (service unavailable), network error, or response timeout. The wait follows the Retry-After header when present, otherwise an exponential backoff with a random part; a wait never exceeds 60 s and a message announces it. Other errors (400, 401, 403, 404...) are not retried. When the attempts are exhausted, the error is reported as before in repositories.csv.
 
-Le délai de 120 s s'applique à chaque tentative, lecture complète de la réponse comprise, sans compter les attentes. Un délai dépassé sur un fichier rend le dépôt partiel sans interrompre le scan ; seul Ctrl+C l'interrompt.
+The 120 s timeout applies to each attempt, reading the whole response included, waits excluded. A timeout on a file makes the repository partial without stopping the scan; only Ctrl+C stops it.
 
-## Extraction NuGet
+## NuGet extraction
 
-Fichiers : *.csproj, *.fsproj, *.vbproj, *.props, *.targets et packages.config. Dossiers bin, obj, node_modules et .git ignorés.
+Files: *.csproj, *.fsproj, *.vbproj, *.props, *.targets and packages.config. The bin, obj, node_modules and .git folders are ignored.
 
-Les PackageReference, GlobalPackageReference et package sont des références directes ; PackageVersion constitue une déclaration de version centralisée, pas une preuve de consommation directe.
+PackageReference, GlobalPackageReference and package are direct references; PackageVersion is a central version declaration, not a proof of direct consumption.
 
-Le scanner peut rapprocher une version depuis le Directory.Packages.props le plus proche, sans évaluer complètement MSBuild. Il ne résout pas les dépendances transitives et n'exécute pas de restauration NuGet.
+The scanner can match a version from the nearest Directory.Packages.props, without fully evaluating MSBuild. It does not resolve transitive dependencies and does not run a NuGet restore.
 
-## Rapports
+## Reports
 
-Le dossier dependency-report (modifiable avec --output) contient :
+The dependency-report folder (changed with --output) contains:
 
-- dependencies.csv : références directes filtrées, package, version, fichier, branche, commit, MatchedFilters ;
-- central-versions.csv : déclarations de versions centralisées correspondant aux critères ;
-- repositories.csv : couverture de tous les dépôts découverts et statut d'analyse ;
-- report.json : rapport JSON complet, incluant les filtres utilisés.
+- dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters;
+- central-versions.csv: central version declarations matching the filters;
+- repositories.csv: coverage of every repository found and its scan status;
+- report.json: full JSON report, filters used included.
 
-CSV UTF-8 BOM séparés par point-virgule.
+CSV files are UTF-8 with BOM and semicolon-separated.
 
-## Diagnostic d'un dépôt
+## Diagnosing a repository
 
 ~~~powershell
-dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*" --repository api-order-bo --diagnostics
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organization/Project" --credentials-file --pattern "Stime.*" --repository api-order-bo --diagnostics
 ~~~
 
-Le fichier diagnostics.json expose toutes les références NuGet extraites, même hors filtre, les branches disponibles, celle sélectionnée, les commits et les fichiers examinés.
+The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined.
 
 ## Build / tests
 
@@ -123,17 +123,17 @@ dotnet build ./src/DependencyInventory/DependencyInventory.csproj
 dotnet test ./tests/DependencyInventory.Tests/DependencyInventory.Tests.csproj
 ~~~
 
-## Messages de commit
+## Commit messages
 
-Les commits suivent [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) et sont rédigés en anglais : `<type>[(scope)][!]: <description>`, avec un type parmi feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test, une description en minuscule à l'impératif, sans point final, et un en-tête de 72 caractères au plus. Un changement cassant se signale par un `!` avant les deux-points, par un pied `BREAKING CHANGE:` (ou `BREAKING-CHANGE:`), ou par les deux.
+Commits follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) and are written in English: `<type>[(scope)][!]: <description>`, with a type among feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test, a lowercase imperative description, no trailing period, and a header of 72 characters at most. A breaking change is signalled by a `!` before the colon, by a `BREAKING CHANGE:` (or `BREAKING-CHANGE:`) footer, or both.
 
-Le workflow commit-lint vérifie chaque commit d'une pull request. Pour la même vérification en local, activer le hook une fois par clone :
+The commit-lint workflow checks every commit of a pull request. For the same check locally, enable the hook once per clone:
 
 ~~~powershell
 git config core.hooksPath .githooks
 ~~~
 
-## Références
+## References
 
 - https://learn.microsoft.com/en-us/rest/api/azure/devops/git/
 - https://docs.gitlab.com/api/groups/
