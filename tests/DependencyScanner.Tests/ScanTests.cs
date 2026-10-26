@@ -149,6 +149,18 @@ public sealed class ScanTests
             "/src/Api/Api.csproj", "Stime.Core.Logging", files));
     }
 
+    [Theory]
+    [InlineData("/src/Api/Api.csproj", true)]
+    [InlineData("/src/Api/Api.FSPROJ", true)]
+    [InlineData(@"src\Legacy\Legacy.vbproj", true)]
+    [InlineData("/Directory.Packages.props", false)]
+    [InlineData("/packages.config", false)]
+    [InlineData("/src/Api/Api.csproj.user", false)]
+    public void IsProjectFileRecognizesProjectExtensions(string path, bool expected)
+    {
+        Assert.Equal(expected, NuGetDependencyParser.IsProjectFile(path));
+    }
+
     [Fact]
     public async Task ReportsWriteEnumNamesAsText()
     {
