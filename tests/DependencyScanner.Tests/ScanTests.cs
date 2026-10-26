@@ -45,8 +45,8 @@ public sealed class ScanTests
 
         var packages = NuGetDependencyParser.Parse("/src/Directory.Packages.props", xml);
         Assert.Equal(3, packages.Count);
-        Assert.Equal("Reference", packages[0].Kind);
-        Assert.Equal("CentralVersion", packages[2].Kind);
+        Assert.Equal(PackageKind.Reference, packages[0].Kind);
+        Assert.Equal(PackageKind.CentralVersion, packages[2].Kind);
     }
 
     [Fact]
@@ -142,11 +142,54 @@ public sealed class ScanTests
     {
         var files = new Dictionary<string, IReadOnlyList<ParsedPackage>>
         {
-            ["/Directory.Packages.props"] = [new("Stime.Core.Logging", "1.0", "CentralVersion", "Explicit")],
-            ["/src/Directory.Packages.props"] = [new("Stime.Core.Logging", "2.0", "CentralVersion", "Explicit")]
+            ["/Directory.Packages.props"] = [new("Stime.Core.Logging", "1.0", PackageKind.CentralVersion, VersionSource.Explicit)],
+            ["/src/Directory.Packages.props"] = [new("Stime.Core.Logging", "2.0", PackageKind.CentralVersion, VersionSource.Explicit)]
         };
         Assert.Equal("2.0", NuGetDependencyParser.ResolveCentralVersion(
             "/src/Api/Api.csproj", "Stime.Core.Logging", files));
+    }
+
+    [Fact]
+    public async Task ReportsWriteEnumNamesAsText()
+    {
+        var report = new ScanReport(DateTimeOffset.UnixEpoch, "https://dev.azure.com/acme/project",
+            [new DependencyFilter("Glob", "Stime.*")],
+            [
+                new("project", "api", "main", "abc", "/src/Api.csproj", "Stime.Web", "2.0.0",
+                    PackageKind.Reference, VersionSource.Central, ["Glob:Stime.*"], "https://example/web"),
+                new("project", "api", "main", "abc", "/Directory.Packages.props", "Stime.Web", "2.0.0",
+                    PackageKind.CentralVersion, VersionSource.Explicit, ["Glob:Stime.*"], "https://example/props")
+            ],
+            [new("project", "api", "main", CoverageStatus.Partial, 1, 1, null)]);
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            await ReportWriter.SaveAsync(report, directory, CancellationToken.None);
+
+            Assert.Contains(";Reference;Central;",
+                await File.ReadAllTextAsync(Path.Combine(directory, "dependencies.csv")));
+            Assert.Contains(";CentralVersion;Explicit;",
+                await File.ReadAllTextAsync(Path.Combine(directory, "central-versions.csv")));
+            Assert.Contains(";Partial;",
+                await File.ReadAllTextAsync(Path.Combine(directory, "repositories.csv")));
+            var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
+            Assert.Contains("\"Kind\": \"CentralVersion\"", json);
+            Assert.Contains("\"VersionSource\": \"Central\"", json);
+            Assert.Contains("\"Status\": \"Partial\"", json);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ParsedPackageSerializesEnumNamesAsText()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            new ParsedPackage("Serilog", null, PackageKind.Reference, VersionSource.Unresolved));
+        Assert.Contains("\"Kind\":\"Reference\"", json);
+        Assert.Contains("\"VersionSource\":\"Unresolved\"", json);
     }
 
     [Theory]
