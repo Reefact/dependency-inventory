@@ -10,16 +10,16 @@
 
 ## 🚨 The problem
 
-Which of your repositories still reference a given package, and in which version? Answering means opening
+Which of your repositories still reference a given package, and which version do they use? Answering means opening
 every repository, every project file and every `Directory.Packages.props`, one at a time.
 
 ## ✅ The solution
 
-Point `depinv` at an Azure DevOps project or a GitLab group, say which packages you care about, and read
-the answer in a CSV file:
+Point `depinv` at an Azure DevOps project or a GitLab group, say which packages you care about (here `Serilog` and
+the packages whose name starts with `Serilog.`), and read the answer in a CSV file:
 
 ~~~powershell
-depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Serilog.*"
+depinv --provider azure --url "https://dev.azure.com/Organization/Project" --regex "^Serilog([.]|$)"
 ~~~
 
 It reads the files of each repository's selected branch through the provider's API, without cloning anything,
