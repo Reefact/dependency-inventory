@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.Json;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -50,14 +49,13 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
     public override async Task<int> ExecuteAsync(
         CommandContext context, ScanSettings settings, CancellationToken cancellationToken)
     {
-        AnsiConsole.Write(new Rule("[cyan]Dependency Inventory[/]").LeftJustified());
-        AnsiConsole.MarkupLine("Scan en lecture seule ; [bold]une branche[/] par dépôt.");
+        ScanConsole.Header();
 
         var url = settings.Url ?? AnsiConsole.Ask<string>("[yellow]URL de la source[/] :");
         try { RepositoryProviderFactory.ValidateOrigin(settings.Provider, url); }
         catch (ArgumentException ex)
         {
-            AnsiConsole.MarkupLine($"[red]{Markup.Escape(ex.Message)}[/]");
+            ScanConsole.Error(ex.Message);
             return 2;
         }
 
@@ -68,12 +66,11 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
         }
         catch (ArgumentException ex)
         {
-            AnsiConsole.MarkupLine($"[red]Filtre invalide : {Markup.Escape(ex.Message)}[/]");
+            ScanConsole.Error($"Filtre invalide : {ex.Message}");
             return 2;
         }
 
-        AnsiConsole.MarkupLine("Filtres (OU logique) : " +
-            Markup.Escape(string.Join(", ", matcher.Filters)));
+        ScanConsole.Filters(matcher);
 
         // On ne journalise jamais les secrets ; Azure utilise login/PAT et GitLab le PAT seul.
         RepositoryCredentials credentials;
@@ -86,13 +83,13 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             }
             catch (OperationCanceledException)
             {
-                AnsiConsole.MarkupLine("[yellow]Lecture interrompue.[/]");
+                ScanConsole.Warning("Lecture interrompue.");
                 return 130;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
                 FormatException or ArgumentException)
             {
-                AnsiConsole.MarkupLine($"[red]Impossible de lire les identifiants : {Markup.Escape(ex.Message)}[/]");
+                ScanConsole.Error($"Impossible de lire les identifiants : {ex.Message}");
                 return 2;
             }
         }
@@ -106,7 +103,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             if ((settings.Provider == SourceProvider.Azure && string.IsNullOrWhiteSpace(login)) ||
                 string.IsNullOrWhiteSpace(pat))
             {
-                AnsiConsole.MarkupLine("[red]Identifiants obligatoires.[/]");
+                ScanConsole.Error("Identifiants obligatoires.");
                 return 2;
             }
             credentials = new RepositoryCredentials(login, pat);
@@ -117,186 +114,43 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             using IRepositoryProvider api = RepositoryProviderFactory.Create(
                 settings.Provider, url, credentials);
             var repositories = await api.GetRepositoriesAsync(cancellationToken);
-            var occurrences = new List<PackageOccurrence>();
-            var coverage = new List<RepositoryCoverage>();
-            var diagnostics = new List<RepositoryDiagnostic>();
-            var selectedRepositories = repositories
-                .Where(r => settings.Repository is null ||
-                    r.Name.Equals(settings.Repository, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-
-            if (selectedRepositories.Length == 0)
+            var selectedRepositories = RepositoryScanner.Select(repositories, settings.Repository);
+            if (selectedRepositories.Count == 0)
             {
-                AnsiConsole.MarkupLine($"[red]Dépôt introuvable : {Markup.Escape(settings.Repository ?? "")}[/]");
+                ScanConsole.Error($"Dépôt introuvable : {settings.Repository ?? ""}");
                 return 2;
             }
 
-            AnsiConsole.MarkupLine($"Source : [blue]{Markup.Escape(api.Origin)}[/] — " +
-                $"{repositories.Count} dépôt(s) accessibles, {selectedRepositories.Length} à analyser.");
+            ScanConsole.Source(api.Origin, repositories.Count, selectedRepositories.Count);
+            var result = await ScanConsole.WithProgressAsync(selectedRepositories.Count, progress =>
+                RepositoryScanner.ScanAsync(api, selectedRepositories, matcher, settings.Diagnostics,
+                    progress, cancellationToken));
 
-            await AnsiConsole.Progress()
-                .AutoClear(false)
-                .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn())
-                .StartAsync(async ctx =>
-                {
-                    var progress = ctx.AddTask("Inspection", maxValue: Math.Max(selectedRepositories.Length, 1));
-                    foreach (var repo in selectedRepositories.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        progress.Description = Markup.Escape(repo.Name);
-                        var diagnostic = settings.Diagnostics
-                            ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
-                            : null;
-                        var result = await ScanRepositoryAsync(api, repo, matcher, diagnostic, cancellationToken);
-                        occurrences.AddRange(result.Hits);
-                        coverage.Add(result.Coverage);
-                        if (diagnostic is not null) diagnostics.Add(diagnostic);
-                        progress.Increment(1);
-                    }
-                });
-
-            var report = new ScanReport(DateTimeOffset.UtcNow, api.Origin, matcher.Filters, occurrences, coverage);
+            var report = new ScanReport(DateTimeOffset.UtcNow, api.Origin, matcher.Filters,
+                result.Occurrences, result.Coverage);
             var paths = await ReportWriter.SaveAsync(report, settings.Output, cancellationToken);
             if (settings.Diagnostics)
             {
-                var diagnosticJson = JsonSerializer.Serialize(diagnostics, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
-                await File.WriteAllTextAsync(Path.Combine(paths, "diagnostics.json"),
-                    diagnosticJson, cancellationToken);
-                AnsiConsole.MarkupLine("[blue]Diagnostic complet : diagnostics.json[/]");
+                await ReportWriter.SaveDiagnosticsAsync(result.Diagnostics, paths, cancellationToken);
+                ScanConsole.DiagnosticsWritten();
             }
-            var references = occurrences.Where(x => x.Kind == PackageKind.Reference).ToArray();
-            var consumers = references.Select(x => x.Repository).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-            var issues = coverage.Count(x => x.Status is CoverageStatus.Partial or CoverageStatus.Failed);
-
-            var summary = new Table().Border(TableBorder.Rounded)
-                .AddColumn("Mesure").AddColumn("Valeur")
-                .AddRow("Dépôts analysés", selectedRepositories.Length.ToString())
-                .AddRow("Dépôts consommateurs", consumers.ToString())
-                .AddRow("Références détectées", references.Length.ToString())
-                .AddRow("Packages distincts", references.Select(x => x.Package)
-                    .Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString())
-                .AddRow("Dépôts en erreur ou partiels", issues.ToString());
-            AnsiConsole.Write(summary);
-            AnsiConsole.MarkupLine($"Rapports : [green]{Markup.Escape(paths)}[/]");
-            if (issues > 0)
-                AnsiConsole.MarkupLine("[yellow]Inspection incomplète : consulter repositories.csv.[/]");
-            return issues > 0 ? 1 : 0;
+            ScanConsole.Summary(selectedRepositories.Count, result, paths);
+            return result.IncompleteRepositories > 0 ? 1 : 0;
         }
         catch (OperationCanceledException)
         {
-            AnsiConsole.MarkupLine("[yellow]Scan interrompu.[/]");
+            ScanConsole.Warning("Scan interrompu.");
             return 130;
         }
         catch (HttpRequestException ex)
         {
-            AnsiConsole.MarkupLine($"[red]{Markup.Escape(ex.Message)}[/]");
+            ScanConsole.Error(ex.Message);
             return 1;
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Échec : {Markup.Escape(ex.Message)}[/]");
+            ScanConsole.Error($"Échec : {ex.Message}");
             return 1;
         }
     }
-
-    private static async Task<(RepositoryCoverage Coverage, List<PackageOccurrence> Hits)>
-        ScanRepositoryAsync(IRepositoryProvider api, Repository repo,
-            DependencyMatcher matcher, RepositoryDiagnostic? diagnostic, CancellationToken ct)
-    {
-        var hits = new List<PackageOccurrence>();
-        if (repo.IsDisabled)
-            return (new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Dépôt désactivé"), hits);
-
-        string? branchName = null;
-        int filesRead = 0;
-        var failures = new List<string>();
-        try
-        {
-            var branches = await api.GetBranchesAsync(repo.Id, ct);
-            if (diagnostic is not null)
-                diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
-            var branch = BranchSelector.Select(branches);
-            if (branch is null)
-                return (new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "Aucune branche Git"), hits);
-            branchName = branch.Name;
-            if (diagnostic is not null)
-            {
-                diagnostic.SelectedBranch = branch.Name;
-                diagnostic.Commit = branch.ObjectId;
-            }
-            var tree = await api.GetTreeAsync(repo.Id, branch.ObjectId, ct);
-            var paths = tree.Where(x => !x.IsFolder && NuGetDependencyParser.IsInterestingFile(x.Path))
-                .Select(x => x.Path).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-
-            // Toutes les références proviennent EXCLUSIVEMENT de ce commit.
-            var parsedFiles = new Dictionary<string, IReadOnlyList<ParsedPackage>>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (var path in paths)
-            {
-                ct.ThrowIfCancellationRequested();
-                try
-                {
-                    var content = await api.GetFileAsync(repo.Id, branch.ObjectId, path, ct);
-                    var packages = NuGetDependencyParser.Parse(path, content);
-                    parsedFiles[path] = packages;
-                    diagnostic?.Files.Add(new FileDiagnostic(path, content.Length, packages, null));
-                    filesRead++;
-                }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
-                {
-                    failures.Add($"{path}: {ex.Message}");
-                    diagnostic?.Files.Add(new FileDiagnostic(path, null, [], ex.Message));
-                }
-            }
-
-            foreach (var file in parsedFiles)
-            foreach (var package in file.Value)
-            {
-                var matchedFilters = matcher.Match(package.Id);
-                if (matchedFilters.Count == 0) continue;
-
-                var version = package.Version;
-                var source = package.VersionSource;
-                if (package.Kind == PackageKind.Reference && version is null &&
-                    NuGetDependencyParser.IsProjectFile(file.Key))
-                {
-                    version = NuGetDependencyParser.ResolveCentralVersion(file.Key, package.Id, parsedFiles);
-                    if (version is not null) source = VersionSource.Central;
-                }
-                hits.Add(new PackageOccurrence(repo.Project, repo.Name, branch.Name,
-                    branch.ObjectId, file.Key, package.Id, version, package.Kind, source,
-                    matchedFilters, api.FileUrl(repo, branch.ObjectId, file.Key)));
-            }
-            var status = failures.Count > 0 ? CoverageStatus.Partial
-                : paths.Length == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
-            return (new(repo.Project, repo.Name, branchName, status,
-                filesRead, hits.Count(x => x.Kind == PackageKind.Reference),
-                failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits);
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex)
-        {
-            return (new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits);
-        }
-    }
-
-    private sealed class RepositoryDiagnostic
-    {
-        public string Project { get; init; } = "";
-        public string Repository { get; init; } = "";
-        public string? SelectedBranch { get; set; }
-        public string? Commit { get; set; }
-        public List<string> AvailableBranches { get; } = [];
-        public List<FileDiagnostic> Files { get; } = [];
-    }
-
-    private sealed record FileDiagnostic(
-        string Path,
-        int? ContentLength,
-        IReadOnlyList<ParsedPackage> Packages,
-        string? Error);
 }
