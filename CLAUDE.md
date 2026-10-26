@@ -25,7 +25,8 @@
   - `ReportWriter.cs`, `Models.cs`: reports and their data.
 - `tests/DependencyInventory.Tests/`: unit tests; `FakeRepositoryProvider` serves repositories from memory.
 - `tools/commit-lint/`, `.githooks/`: commit message lint.
-- `CONTRIBUTING.md`: build, tests and commit conventions (the README is for users only).
+- `CONTRIBUTING.md`: build, tests, changelog and commit conventions (the README is for users only).
+- `CHANGELOG.md`: user-facing changes, Keep a Changelog format.
 - `.github/workflows/release.yml`, `RELEASING.md`: NuGet tool publication (tag `v*`, trusted publishing).
 
 ## Rules
@@ -35,4 +36,5 @@
 - **Read-only.** The tool never writes to Azure DevOps or GitLab: GET requests only.
 - **Secrets** (PAT, login) are never logged nor serialized.
 - **Tests and warnings.** Every behavior change comes with a test. The build treats warnings as errors.
+- **Changelog.** A user-facing change (option, command, report, behavior, fix) adds a line under `[Unreleased]` in `CHANGELOG.md`, in the same pull request.
 - **English only.** README, CLI messages, report texts, code, comments and commit messages are in English.
