@@ -1,0 +1,4 @@
+#!/bin/sh
+# Lint the commit message locally. Enable once per clone with:
+#   git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/tools/commit-lint/lint-commit-message.sh" "$1"

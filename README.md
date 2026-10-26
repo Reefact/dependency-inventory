@@ -104,6 +104,16 @@ dotnet build ./src/DependencyScanner/DependencyScanner.csproj
 dotnet test ./tests/DependencyScanner.Tests/DependencyScanner.Tests.csproj
 ~~~
 
+## Messages de commit
+
+Les commits suivent [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) et sont rédigés en anglais : `<type>[(scope)][!]: <description>`, avec un type parmi feat, fix, build, chore, ci, docs, perf, refactor, revert, style, test, une description en minuscule à l'impératif, sans point final, et un en-tête de 72 caractères au plus.
+
+Le workflow commit-lint vérifie chaque commit d'une pull request. Pour la même vérification en local, activer le hook une fois par clone :
+
+~~~powershell
+git config core.hooksPath .githooks
+~~~
+
 ## Références
 
 - https://learn.microsoft.com/en-us/rest/api/azure/devops/git/

@@ -1,0 +1,59 @@
+name: commit-lint
+
+# Lint every non-merge commit of a pull request against Conventional Commits, using the same
+# script as the local commit-msg hook. A bypassed hook (`git commit --no-verify`) is caught here.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commit-lint:
+    name: Conventional commits
+    runs-on: ubuntu-latest
+    # Message linting takes seconds; cap a stuck runner.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The pull request's commits are needed, not just the tip.
+          fetch-depth: 0
+
+      - name: Lint the pull request commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Linting non-merge commits in ${BASE_SHA}..${HEAD_SHA}"
+          commits="$(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}")"
+          if [ -z "${commits}" ]; then
+            echo "No non-merge commits to lint."
+            exit 0
+          fi
+          status=0
+          for sha in ${commits}; do
+            echo "── $(git log -1 --format='%h %s' "${sha}")"
+            # Dependabot writes its own headers and cannot amend them; identify it by author.
+            case "$(git log -1 --format='%ae' "${sha}")" in
+              *dependabot*)
+                echo "   skipped (Dependabot-authored)"
+                continue
+                ;;
+            esac
+            if git log -1 --format=%B "${sha}" | sh tools/commit-lint/lint-commit-message.sh --ci -; then
+              echo "   ok"
+            else
+              status=1
+            fi
+          done
+          if [ "${status}" -ne 0 ]; then
+            echo
+            echo "One or more commit messages do not follow Conventional Commits."
+            echo "Fix them with an interactive rebase (git rebase -i) before merge."
+          fi
+          exit "${status}"
