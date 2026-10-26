@@ -1,4 +1,4 @@
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 public enum SourceProvider
 {

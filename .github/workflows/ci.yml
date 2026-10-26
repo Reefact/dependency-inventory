@@ -46,10 +46,10 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Restore
-        run: dotnet restore DependencyScanner.sln
+        run: dotnet restore DependencyInventory.sln
 
       - name: Build
-        run: dotnet build DependencyScanner.sln -c Release --no-restore
+        run: dotnet build DependencyInventory.sln -c Release --no-restore
 
       - name: Test
-        run: dotnet test DependencyScanner.sln -c Release --no-build --logger "console;verbosity=normal"
+        run: dotnet test DependencyInventory.sln -c Release --no-build --logger "console;verbosity=normal"

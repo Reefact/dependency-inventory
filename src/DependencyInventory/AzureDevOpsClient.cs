@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 public sealed class AzureDevOpsClient : IDisposable
 {
@@ -21,7 +21,7 @@ public sealed class AzureDevOpsClient : IDisposable
         _http.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Basic", encoded);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("DependencyScanner/1.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("DependencyInventory/1.0");
     }
 
     public async Task<IReadOnlyList<Repository>> GetRepositoriesAsync(CancellationToken ct)

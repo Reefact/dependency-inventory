@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 public sealed record AzureOrigin(string Organization, string Project)
 {

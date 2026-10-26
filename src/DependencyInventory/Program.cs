@@ -1,10 +1,10 @@
 using Spectre.Console.Cli;
-using DependencyScanner;
+using DependencyInventory;
 
 var app = new CommandApp<ScanCommand>();
 app.Configure(config =>
 {
-    config.SetApplicationName("dependency-scan");
+    config.SetApplicationName("dependency-inventory");
     config.SetApplicationVersion("1.0.0");
 });
 

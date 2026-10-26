@@ -1,4 +1,4 @@
-# DependencyScanner
+# DependencyInventory
 
 CLI .NET 10 / Spectre.Console.Cli pour inventorier les références NuGet déclarées dans les dépôts Git d'un projet Azure DevOps ou d'un groupe GitLab.
 
@@ -9,7 +9,7 @@ Architecture : provider Git → sélection d'une branche → extraction NuGet �
 L'URL désigne le projet Azure DevOps, et non un dépôt Git.
 
 ~~~powershell
-dotnet run --project ./src/DependencyScanner -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*"
 ~~~
 
 Le fichier .azure-credentials dans le dossier courant contient deux lignes :
@@ -26,7 +26,7 @@ Le PAT Azure DevOps doit avoir le droit Code (Read).
 L'URL désigne le groupe GitLab, éventuellement un sous-groupe, par exemple https://gitlab.example.com/red/web. Les projets des sous-groupes sont inclus.
 
 ~~~powershell
-dotnet run --project ./src/DependencyScanner -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*"
+dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*"
 ~~~
 
 Le fichier .gitlab-credentials dans le dossier courant contient une seule ligne :
@@ -55,11 +55,11 @@ Options répétables et combinées par OU :
 - --case-sensitive : optionnel, la recherche est insensible à la casse par défaut.
 
 ~~~powershell
-dotnet run --project ./src/DependencyScanner -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*" --pattern "Microsoft.Extensions.*"
 
-dotnet run --project ./src/DependencyScanner -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --regex "^Serilog([.]|$)"
+dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --regex "^Serilog([.]|$)"
 
-dotnet run --project ./src/DependencyScanner -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "*.Hosting" --regex "^Stime[.]Core[.]"
 ~~~
 
 Chaque dépendance apparaît une seule fois par déclaration, même si elle correspond à plusieurs critères. La colonne MatchedFilters conserve les critères qui ont trouvé le package.
@@ -92,7 +92,7 @@ CSV UTF-8 BOM séparés par point-virgule.
 ## Diagnostic d'un dépôt
 
 ~~~powershell
-dotnet run --project ./src/DependencyScanner -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*" --repository api-order-bo --diagnostics
+dotnet run --project ./src/DependencyInventory -- --provider azure --url "https://dev.azure.com/Organisation/Projet" --credentials-file --pattern "Stime.*" --repository api-order-bo --diagnostics
 ~~~
 
 Le fichier diagnostics.json expose toutes les références NuGet extraites, même hors filtre, les branches disponibles, celle sélectionnée, les commits et les fichiers examinés.
@@ -100,8 +100,8 @@ Le fichier diagnostics.json expose toutes les références NuGet extraites, mêm
 ## Build / tests
 
 ~~~powershell
-dotnet build ./src/DependencyScanner/DependencyScanner.csproj
-dotnet test ./tests/DependencyScanner.Tests/DependencyScanner.Tests.csproj
+dotnet build ./src/DependencyInventory/DependencyInventory.csproj
+dotnet test ./tests/DependencyInventory.Tests/DependencyInventory.Tests.csproj
 ~~~
 
 ## Messages de commit

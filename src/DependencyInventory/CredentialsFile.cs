@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 /// <summary>
 /// Login is used for Azure DevOps Basic/PAT authentication.
