@@ -25,6 +25,7 @@
   - `ReportWriter.cs`, `Models.cs`: reports and their data.
 - `tests/DependencyInventory.Tests/`: unit tests; `FakeRepositoryProvider` serves repositories from memory.
 - `tools/commit-lint/`, `.githooks/`: commit message lint.
+- `CONTRIBUTING.md`: build, tests and commit conventions (the README is for users only).
 - `.github/workflows/release.yml`, `RELEASING.md`: NuGet tool publication (tag `v*`, trusted publishing).
 
 ## Rules
