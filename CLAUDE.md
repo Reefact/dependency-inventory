@@ -1,17 +1,17 @@
-# DependencyScanner — guide for Claude Code
+# DependencyInventory — guide for Claude Code
 
 .NET 10 CLI that inventories the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group. The README describes usage.
 
 ## Build & test
 
-- Build: `dotnet build DependencyScanner.sln`
-- Test: `dotnet test DependencyScanner.sln`
+- Build: `dotnet build DependencyInventory.sln`
+- Test: `dotnet test DependencyInventory.sln`
 - The projects target `net10.0` (LTS).
 - CI (`.github/workflows/ci.yml`) builds and tests in Release on Ubuntu and Windows with the .NET 10 SDK.
 
 ## Repository map
 
-- `src/DependencyScanner/`
+- `src/DependencyInventory/`
   - `Program.cs`, `ScanCommand.cs`: CLI options, prompts, scan loop, console output.
   - `RepositoryProviders.cs`, `AzureDevOpsClient.cs`, `GitLabRepositoryProvider.cs`: Git hosting APIs.
   - `CredentialsFile.cs`: credentials file reading.
@@ -19,7 +19,7 @@
   - `NuGetDependencyParser.cs`: NuGet references extracted from project files.
   - `DependencyMatcher.cs`: `--pattern` / `--regex` filters.
   - `ReportWriter.cs`, `Models.cs`: reports and their data.
-- `tests/DependencyScanner.Tests/`: unit tests.
+- `tests/DependencyInventory.Tests/`: unit tests.
 - `tools/commit-lint/`, `.githooks/`: commit message lint.
 
 ## Rules

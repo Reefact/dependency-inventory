@@ -3,7 +3,7 @@ using System.Text.Json;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 public sealed class ScanSettings : CommandSettings
 {
@@ -50,7 +50,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
     public override async Task<int> ExecuteAsync(
         CommandContext context, ScanSettings settings, CancellationToken cancellationToken)
     {
-        AnsiConsole.Write(new Rule("[cyan]Dependency Scanner[/]").LeftJustified());
+        AnsiConsole.Write(new Rule("[cyan]Dependency Inventory[/]").LeftJustified());
         AnsiConsole.MarkupLine("Scan en lecture seule ; [bold]une branche[/] par dépôt.");
 
         var url = settings.Url ?? AnsiConsole.Ask<string>("[yellow]URL de la source[/] :");

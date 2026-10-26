@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 public static class ReportWriter
 {

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 public sealed record DependencyFilter(string Type, string Expression)
 {

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 /// <summary>
 /// GitLab group URL (for example https://gitlab.example.com/group/subgroup).
@@ -55,7 +55,7 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
         };
         // PRIVATE-TOKEN is intentionally never logged or serialized.
         _http.DefaultRequestHeaders.TryAddWithoutValidation("PRIVATE-TOKEN", pat);
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("DependencyScanner/1.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("DependencyInventory/1.0");
     }
 
     public async Task<IReadOnlyList<Repository>> GetRepositoriesAsync(CancellationToken ct)

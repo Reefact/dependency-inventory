@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace DependencyScanner;
+namespace DependencyInventory;
 
 public static class NuGetDependencyParser
 {

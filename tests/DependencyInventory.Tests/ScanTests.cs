@@ -1,7 +1,7 @@
-using DependencyScanner;
+using DependencyInventory;
 using Xunit;
 
-namespace DependencyScanner.Tests;
+namespace DependencyInventory.Tests;
 
 public sealed class ScanTests
 {

@@ -12,6 +12,6 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/DependencyScanner/DependencyScanner.csproj" />
+    <ProjectReference Include="../../src/DependencyInventory/DependencyInventory.csproj" />
   </ItemGroup>
 </Project>
