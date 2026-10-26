@@ -79,6 +79,9 @@ else
 
   # <type>[(<scope>[,<scope>...])][!]: <lowercase description>
   if ! printf '%s' "$subject" | grep -Eq "^(${TYPES})(\(${SCOPE}(,${SCOPE})*\))?!?: [a-z]"; then
+    # The specific diagnostics below explain the usual mistakes; the generic error at the
+    # end guarantees a rejection when none of them applies.
+    errors_before=$errors
     has_colon=1
     if ! printf '%s' "$subject" | grep -Eq '^[^:]+: .'; then
       has_colon=0
@@ -98,6 +101,9 @@ else
         [A-Z]) err "the description must start with a lowercase letter (imperative: 'add', not 'Add'/'Added')" ;;
         *) ;;
       esac
+    fi
+    if [ "$errors" = "$errors_before" ]; then
+      err "expected '<type>[(scope)][!]: <description>', with the description starting with a lowercase letter"
     fi
   fi
 
