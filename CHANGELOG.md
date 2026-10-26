@@ -8,6 +8,14 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+## [1.0.0-preview.2] - 2026-10-26
+
+### Fixed
+
+- **The installation commands shown in the README, and so on the nuget.org page, now include `--prerelease`.**
+  While only preview versions are published, `dotnet tool install` and `dotnet tool update` fail without it.
+  Version 1.0.0-preview.1 shipped the commands without the flag.
+
 ## [1.0.0-preview.1] - 2026-10-26
 
 ### Added
@@ -37,5 +45,6 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
-[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.1...HEAD
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.2...HEAD
+[1.0.0-preview.2]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.1...v1.0.0-preview.2
 [1.0.0-preview.1]: https://github.com/Reefact/dependency-inventory/releases/tag/v1.0.0-preview.1
