@@ -5,7 +5,7 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
 {
     private readonly Dictionary<string, IReadOnlyList<GitBranch>> _branches = new();
     private readonly Dictionary<string, Dictionary<string, string>> _files = new();
-    private readonly HashSet<(string Repository, string Path)> _failingFiles = [];
+    private readonly Dictionary<(string Repository, string Path), Exception> _failingFiles = new();
     private readonly HashSet<string> _failingBranches = [];
 
     public List<Repository> Repositories { get; } = [];
@@ -21,9 +21,9 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
         return this;
     }
 
-    public FakeRepositoryProvider FailFile(string repository, string path)
+    public FakeRepositoryProvider FailFile(string repository, string path, Exception? error = null)
     {
-        _failingFiles.Add((repository, path));
+        _failingFiles[(repository, path)] = error ?? new HttpRequestException($"cannot read {path}");
         return this;
     }
 
@@ -48,8 +48,8 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
             .ToArray());
 
     public Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct) =>
-        _failingFiles.Contains((repositoryId, path))
-            ? throw new HttpRequestException($"cannot read {path}")
+        _failingFiles.TryGetValue((repositoryId, path), out var error)
+            ? throw error
             : Task.FromResult(_files[repositoryId][path]);
 
     public string FileUrl(Repository repository, string commitId, string path) =>

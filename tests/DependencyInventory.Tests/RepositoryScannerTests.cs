@@ -82,6 +82,29 @@ public sealed class RepositoryScannerTests
     }
 
     [Fact]
+    public async Task ATimeoutMakesTheRepositoryPartialInsteadOfStoppingTheScan()
+    {
+        var api = Provider().FailFile("api", "/src/Api/Api.csproj",
+            new TaskCanceledException("timed out", new TimeoutException()));
+
+        var result = await ScanAsync(api, "api");
+
+        Assert.Equal(CoverageStatus.Partial, result.Coverage.Status);
+        Assert.Contains("/src/Api/Api.csproj: timed out", result.Coverage.Details);
+    }
+
+    [Fact]
+    public async Task CancellationByTheUserStopsTheScan()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var api = Provider();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RepositoryScanner.ScanRepositoryAsync(
+            api, api.Repositories.Single(r => r.Name == "api"), Matcher, null, cancellation.Token));
+    }
+
+    [Fact]
     public async Task DiagnosticRecordsBranchesAndEveryFileExamined()
     {
         var diagnostic = new RepositoryDiagnostic { Project = "project", Repository = "broken" };

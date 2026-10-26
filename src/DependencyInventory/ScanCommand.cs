@@ -137,7 +137,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             ScanConsole.Summary(selectedRepositories.Count, result, paths);
             return result.IncompleteRepositories > 0 ? 1 : 0;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             ScanConsole.Warning("Scan interrompu.");
             return 130;

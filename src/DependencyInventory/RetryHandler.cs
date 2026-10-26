@@ -17,16 +17,29 @@ public sealed record RetryOptions
     public TimeSpan AttemptTimeout { get; init; } = TimeSpan.FromSeconds(120);
 }
 
-/// <summary>A retry about to happen: the status that caused it, the attempt that failed and the wait.</summary>
-public sealed record RetryNotice(HttpStatusCode Status, int Attempt, int MaxAttempts, TimeSpan Delay);
+/// <summary>
+/// A retry about to happen: what failed (an HTTP status, or a network error or timeout when
+/// <see cref="Status"/> is null), the attempt that failed and the wait before the next one.
+/// </summary>
+public sealed record RetryNotice(HttpStatusCode? Status, Exception? Error, int Attempt, int MaxAttempts, TimeSpan Delay);
 
 /// <summary>
-/// Retries rate-limited requests (HTTP 429), waiting as long as Retry-After asks, or with an exponential
-/// backoff and jitter when it is absent. When the attempts are exhausted, the last response is returned
-/// so the caller reports it as before.
+/// Retries transient failures: rate limiting (HTTP 429), unavailable gateways or services (HTTP 502, 503,
+/// 504), network errors and per-attempt timeouts. It waits as long as Retry-After asks, or with an
+/// exponential backoff and jitter when it is absent. When the attempts are exhausted, the last response
+/// is returned, or the last error rethrown, so the caller reports it as before. Other statuses (400, 401,
+/// 403, 404...) and cancellation by the caller are never retried.
 /// </summary>
 public sealed class RetryHandler : DelegatingHandler
 {
+    private static readonly HashSet<HttpStatusCode> TransientStatuses =
+    [
+        HttpStatusCode.TooManyRequests,
+        HttpStatusCode.BadGateway,
+        HttpStatusCode.ServiceUnavailable,
+        HttpStatusCode.GatewayTimeout
+    ];
+
     private readonly RetryOptions _options;
     private readonly Action<RetryNotice>? _onRetry;
     private readonly TimeProvider _time;
@@ -49,16 +62,38 @@ public sealed class RetryHandler : DelegatingHandler
         // The requests are bodiless GETs, so the same message can be sent again.
         for (var attempt = 1; ; attempt++)
         {
-            var response = await SendAttemptAsync(request, cancellationToken);
-            if (response.StatusCode != HttpStatusCode.TooManyRequests || attempt >= _options.MaxAttempts)
+            var lastAttempt = attempt >= _options.MaxAttempts;
+            HttpResponseMessage response;
+            try
+            {
+                response = await SendAttemptAsync(request, cancellationToken);
+            }
+            catch (Exception ex) when (!lastAttempt && IsTransient(ex, cancellationToken))
+            {
+                await WaitAsync(null, ex, attempt, Backoff(attempt), cancellationToken);
+                continue;
+            }
+
+            if (lastAttempt || !TransientStatuses.Contains(response.StatusCode))
                 return response;
 
+            var status = response.StatusCode;
             var delay = DelayBeforeRetry(response, attempt);
             response.Dispose();
-            _onRetry?.Invoke(new RetryNotice(HttpStatusCode.TooManyRequests, attempt, _options.MaxAttempts, delay));
-            await _delay(delay, cancellationToken);
+            await WaitAsync(status, null, attempt, delay, cancellationToken);
         }
     }
+
+    private Task WaitAsync(HttpStatusCode? status, Exception? error, int attempt, TimeSpan delay, CancellationToken ct)
+    {
+        _onRetry?.Invoke(new RetryNotice(status, error, attempt, _options.MaxAttempts, delay));
+        return _delay(delay, ct);
+    }
+
+    /// <summary>A network error, or an attempt timeout; never a cancellation asked by the caller.</summary>
+    private static bool IsTransient(Exception ex, CancellationToken ct) =>
+        !ct.IsCancellationRequested &&
+        (ex is HttpRequestException || ex is TaskCanceledException { InnerException: TimeoutException });
 
     private async Task<HttpResponseMessage> SendAttemptAsync(HttpRequestMessage request, CancellationToken ct)
     {
@@ -80,21 +115,22 @@ public sealed class RetryHandler : DelegatingHandler
     private TimeSpan DelayBeforeRetry(HttpResponseMessage response, int attempt)
     {
         var retryAfter = response.Headers.RetryAfter;
-        TimeSpan delay;
         if (retryAfter?.Delta is { } delta)
-            delay = delta;
-        else if (retryAfter?.Date is { } date)
-            delay = date - _time.GetUtcNow();
-        else
-        {
-            // Exponential backoff with jitter: half the step is fixed, the other half random.
-            var step = _options.BaseDelay * Math.Pow(2, attempt - 1);
-            delay = step / 2 + step / 2 * _random();
-        }
-
-        if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
-        return delay > _options.MaxDelay ? _options.MaxDelay : delay;
+            return Capped(delta);
+        if (retryAfter?.Date is { } date)
+            return Capped(date - _time.GetUtcNow());
+        return Backoff(attempt);
     }
+
+    /// <summary>Exponential backoff with jitter: half the step is fixed, the other half random.</summary>
+    private TimeSpan Backoff(int attempt)
+    {
+        var step = _options.BaseDelay * Math.Pow(2, attempt - 1);
+        return Capped(step / 2 + step / 2 * _random());
+    }
+
+    private TimeSpan Capped(TimeSpan delay) =>
+        delay < TimeSpan.Zero ? TimeSpan.Zero : delay > _options.MaxDelay ? _options.MaxDelay : delay;
 }
 
 /// <summary>The HTTP pipeline shared by the Azure DevOps and GitLab clients.</summary>

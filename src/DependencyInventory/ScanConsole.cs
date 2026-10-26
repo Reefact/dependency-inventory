@@ -1,3 +1,4 @@
+using System.Net;
 using Spectre.Console;
 
 namespace DependencyInventory;
@@ -25,10 +26,19 @@ public static class ScanConsole
     public static void Warning(string message) =>
         AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(message)}[/]");
 
-    public static void RetryScheduled(RetryNotice notice) =>
-        AnsiConsole.MarkupLine($"[yellow]Limite de requêtes atteinte (HTTP {(int)notice.Status}), " +
+    public static void RetryScheduled(RetryNotice notice)
+    {
+        var cause = notice switch
+        {
+            { Status: HttpStatusCode.TooManyRequests } => "Limite de requêtes atteinte (HTTP 429)",
+            { Status: { } status } => $"Service indisponible (HTTP {(int)status})",
+            { Error: TaskCanceledException } => "Délai de réponse dépassé",
+            _ => "Erreur réseau"
+        };
+        AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(cause)}, " +
             $"reprise dans {Math.Ceiling(notice.Delay.TotalSeconds):0} s " +
             $"(tentative {notice.Attempt + 1}/{notice.MaxAttempts}).[/]");
+    }
 
     public static void DiagnosticsWritten() =>
         AnsiConsole.MarkupLine("[blue]Diagnostic complet : diagnostics.json[/]");

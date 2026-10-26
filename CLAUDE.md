@@ -16,7 +16,7 @@
   - `RepositoryScanner.cs`, `RepositoryDiagnostics.cs`: scan of the repositories, without console access.
   - `ScanConsole.cs`: console output (header, messages, progress bar, summary).
   - `RepositoryProviders.cs`, `AzureDevOpsClient.cs`, `GitLabRepositoryProvider.cs`: Git hosting APIs.
-  - `RetryHandler.cs`: HTTP pipeline shared by both clients (retry on HTTP 429, per-attempt timeout).
+  - `RetryHandler.cs`: HTTP pipeline shared by both clients (retry on transient failures, per-attempt timeout).
   - `CredentialsFile.cs`: credentials file reading.
   - `BranchSelector.cs`: the one branch scanned per repository.
   - `NuGetDependencyParser.cs`: NuGet references extracted from project files.
