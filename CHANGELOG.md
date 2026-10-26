@@ -42,7 +42,7 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   honouring `Retry-After`, with a 120 s timeout per attempt.
 - **Credentials**: `depinv login` and `depinv logout` store and delete them in the Windows Credential Manager. On
   Linux and macOS, credentials are read from a file with `--credentials-file`, or typed at each scan.
-- **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory` installs the `depinv`
+- **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory --prerelease` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
 [Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.2...HEAD
