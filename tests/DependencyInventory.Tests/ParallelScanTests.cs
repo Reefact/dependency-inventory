@@ -23,6 +23,8 @@ public sealed class ParallelScanTests
     [InlineData(-1, ParallelismMode.Repositories)]
     [InlineData(4, null)]
     [InlineData(1, ParallelismMode.Files)]
+    [InlineData(4, (ParallelismMode)2)]
+    [InlineData(4, (ParallelismMode)(-1))]
     public void InvalidCombinationsAreRejected(int degree, ParallelismMode? mode)
     {
         Assert.Throws<ArgumentException>(() => ScanParallelism.Create(degree, mode));
