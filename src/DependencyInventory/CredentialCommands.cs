@@ -22,15 +22,19 @@ public sealed class LoginCommand : Command<CredentialSettings>
     {
         if (CredentialCommand.Resolve(settings) is not var (store, key)) return 2;
 
-        var credentials = CredentialPrompt.Ask(settings.Provider);
-        if (credentials is null)
+        switch (VaultOperations.Login(store, key, () => CredentialPrompt.Ask(settings.Provider), cancellationToken))
         {
-            ScanConsole.Error("Credentials are required.");
-            return 2;
+            case VaultChange.Cancelled:
+                ScanConsole.Warning("Login cancelled; the stored credentials are unchanged.");
+                return 130;
+            case VaultChange.MissingCredentials:
+                ScanConsole.Error("Credentials are required.");
+                return 2;
+            default:
+                AnsiConsole.MarkupLine(
+                    $"Credentials stored in the {Markup.Escape(store.Name)} for [blue]{Markup.Escape(key)}[/].");
+                return 0;
         }
-        store.Write(key, credentials);
-        AnsiConsole.MarkupLine($"Credentials stored in the {Markup.Escape(store.Name)} for [blue]{Markup.Escape(key)}[/].");
-        return 0;
     }
 }
 
@@ -41,10 +45,45 @@ public sealed class LogoutCommand : Command<CredentialSettings>
     {
         if (CredentialCommand.Resolve(settings) is not var (store, key)) return 2;
 
-        AnsiConsole.MarkupLine(store.Delete(key)
-            ? $"Credentials deleted from the {Markup.Escape(store.Name)} for [blue]{Markup.Escape(key)}[/]."
-            : $"No stored credentials for [blue]{Markup.Escape(key)}[/].");
-        return 0;
+        switch (VaultOperations.Logout(store, key, cancellationToken))
+        {
+            case VaultChange.Cancelled:
+                ScanConsole.Warning("Logout cancelled; the stored credentials are unchanged.");
+                return 130;
+            case VaultChange.Deleted:
+                AnsiConsole.MarkupLine(
+                    $"Credentials deleted from the {Markup.Escape(store.Name)} for [blue]{Markup.Escape(key)}[/].");
+                return 0;
+            default:
+                AnsiConsole.MarkupLine($"No stored credentials for [blue]{Markup.Escape(key)}[/].");
+                return 0;
+        }
+    }
+}
+
+public enum VaultChange { Stored, Deleted, NotFound, MissingCredentials, Cancelled }
+
+/// <summary>
+/// The vault changes made by login and logout. Ctrl+C is intercepted to cancel the token instead of
+/// ending the process, so a cancellation requested during a prompt is checked right before the vault
+/// is modified.
+/// </summary>
+public static class VaultOperations
+{
+    public static VaultChange Login(ICredentialStore store, string key,
+        Func<RepositoryCredentials?> prompt, CancellationToken ct)
+    {
+        var credentials = prompt();
+        if (ct.IsCancellationRequested) return VaultChange.Cancelled;
+        if (credentials is null) return VaultChange.MissingCredentials;
+        store.Write(key, credentials);
+        return VaultChange.Stored;
+    }
+
+    public static VaultChange Logout(ICredentialStore store, string key, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return VaultChange.Cancelled;
+        return store.Delete(key) ? VaultChange.Deleted : VaultChange.NotFound;
     }
 }
 
