@@ -20,6 +20,9 @@ public static class ScanConsole
         AnsiConsole.MarkupLine($"Source: [blue]{Markup.Escape(origin)}[/] — " +
             $"{accessible} accessible repositories, {selected} to scan.");
 
+    public static void CredentialsFromStore(string store) =>
+        AnsiConsole.MarkupLine($"Credentials: {Markup.Escape(store)}.");
+
     public static void Error(string message) =>
         AnsiConsole.MarkupLine($"[red]{Markup.Escape(message)}[/]");
 
