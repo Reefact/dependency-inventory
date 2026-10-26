@@ -1,6 +1,6 @@
 # DependencyInventory
 
-.NET 10 / Spectre.Console.Cli CLI that inventories the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group.
+.NET 10 command-line tool built with Spectre.Console.Cli to inventory NuGet references in Azure DevOps projects or GitLab groups.
 
 Architecture: Git provider → branch selection → NuGet extraction → glob/regex filters → reports. There is no implicit filter: one or more patterns or regexes are required.
 
@@ -68,16 +68,16 @@ Each dependency appears once per declaration, even when it matches several filte
 
 A single branch is scanned per repository, in the order main → release (release/* included) → develop → dev → first other branch (alphabetical). There is no fallback to a second branch when no dependency is found.
 
-The Azure DevOps and GitLab Git APIs read the same commit consistently, without a local clone.
+Both providers read files from each repository's selected commit without cloning it.
 
 ## Parallelism
 
-By default the scan is sequential: one repository after the other, one file after the other. --parallelism (1 to 8) allows several simultaneous requests; --parallelism-mode is then required and chooses the level run in parallel:
+By default the scan is sequential: one repository after the other, one file after the other. --parallelism (1 to 8) allows several simultaneous requests; --parallelism-mode is then required and specifies whether files or repositories are processed in parallel:
 
 - files: one repository at a time, several of its files read at once; suited to large repositories and to --repository;
 - repositories: several repositories at once, each reading its files one after the other; suited to groups of many small repositories.
 
-Only one level runs in parallel, so --parallelism is also the maximum number of simultaneous HTTP requests. Reports are identical, in the same order, whatever the parallelism and the mode. More parallelism raises the risk of HTTP 429; such responses are retried (see Transient errors), but a moderate value (2 to 4) spares the platforms' limits.
+Only one level runs in parallel, so --parallelism is also the maximum number of simultaneous HTTP requests. Reports are identical, in the same order, whatever the parallelism and the mode. More parallelism raises the risk of HTTP 429; such responses are retried (see Transient errors), but a moderate value (2 to 4) reduces the risk of hitting the providers' rate limits.
 
 ~~~powershell
 dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https://gitlab.example.com/red/web" --credentials-file --pattern "Stime.*" --parallelism 4 --parallelism-mode repositories
@@ -85,9 +85,9 @@ dotnet run --project ./src/DependencyInventory -- --provider gitlab --url "https
 
 ## Transient errors
 
-A request to Azure DevOps or GitLab is retried, up to 5 attempts in total, when it fails transiently: HTTP 429 (too many requests), 502, 503 or 504 (service unavailable), network error, or response timeout. The wait follows the Retry-After header when present, otherwise an exponential backoff with a random part; a wait never exceeds 60 s and a message announces it. Other errors (400, 401, 403, 404...) are not retried. When the attempts are exhausted, the error is reported as before in repositories.csv.
+A request to Azure DevOps or GitLab is retried, up to 5 attempts in total, when it fails transiently: HTTP 429 (too many requests), 502, 503 or 504 (service unavailable), network error, or response timeout. The wait follows the Retry-After header when present, otherwise an exponential backoff with a random part; each retry delay is capped at 60 seconds and announced in the console. Other errors (400, 401, 403, 404...) are not retried. When the attempts are exhausted, the error is reported as before in repositories.csv.
 
-The 120 s timeout applies to each attempt, reading the whole response included, waits excluded. A timeout on a file makes the repository partial without stopping the scan; only Ctrl+C stops it.
+The 120 s timeout applies to each attempt, including the time needed to read the full response, but excluding delays between attempts. A timeout on a file makes the repository partial without stopping the scan; only Ctrl+C stops it.
 
 ## NuGet extraction
 
@@ -99,12 +99,12 @@ The scanner can match a version from the nearest Directory.Packages.props, witho
 
 ## Reports
 
-The dependency-report folder (changed with --output) contains:
+The dependency-report folder (configurable with --output) contains:
 
 - dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters;
 - central-versions.csv: central version declarations matching the filters;
 - repositories.csv: coverage of every repository found and its scan status;
-- report.json: full JSON report, filters used included.
+- report.json: full JSON report, including the applied filters.
 
 CSV files are UTF-8 with BOM and semicolon-separated.
 

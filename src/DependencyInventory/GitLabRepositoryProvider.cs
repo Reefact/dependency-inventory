@@ -127,7 +127,7 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
             results.AddRange(values.Select(v => v.Clone()));
             if (values.Length < 100) return results;
         }
-        throw new InvalidOperationException("Limite de pagination GitLab atteinte.");
+        throw new InvalidOperationException("GitLab pagination limit reached.");
     }
 
     private async Task<HttpResponseMessage> SendAsync(string url, CancellationToken ct)
