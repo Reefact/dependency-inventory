@@ -8,6 +8,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+## [1.0.0-preview.1] - 2026-10-26
+
 ### Added
 
 - **Inventory of the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group.**
@@ -34,3 +36,6 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   Linux and macOS, credentials are read from a file with `--credentials-file`, or typed at each scan.
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory` installs the `depinv`
   command. The package is licensed under Apache-2.0.
+
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.1...HEAD
+[1.0.0-preview.1]: https://github.com/Reefact/dependency-inventory/releases/tag/v1.0.0-preview.1
