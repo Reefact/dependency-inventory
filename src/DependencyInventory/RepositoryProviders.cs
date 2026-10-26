@@ -20,13 +20,14 @@ public interface IRepositoryProvider : IDisposable
 
 public static class RepositoryProviderFactory
 {
-    public static IRepositoryProvider Create(SourceProvider provider, string url, RepositoryCredentials credentials) =>
+    public static IRepositoryProvider Create(SourceProvider provider, string url,
+        RepositoryCredentials credentials, Action<RetryNotice>? onRetry = null) =>
         provider switch
         {
             SourceProvider.Azure => new AzureRepositoryProvider(
-                AzureOrigin.Parse(url), credentials.Login, credentials.Pat),
+                AzureOrigin.Parse(url), credentials.Login, credentials.Pat, onRetry),
             SourceProvider.GitLab => new GitLabRepositoryProvider(
-                GitLabOrigin.Parse(url), credentials.Pat),
+                GitLabOrigin.Parse(url), credentials.Pat, onRetry),
             _ => throw new ArgumentOutOfRangeException(nameof(provider))
         };
 
@@ -48,10 +49,10 @@ public sealed class AzureRepositoryProvider : IRepositoryProvider
 
     public string Origin => _origin.RootUrl;
 
-    public AzureRepositoryProvider(AzureOrigin origin, string login, string pat)
+    public AzureRepositoryProvider(AzureOrigin origin, string login, string pat, Action<RetryNotice>? onRetry = null)
     {
         _origin = origin;
-        _api = new AzureDevOpsClient(origin, login, pat);
+        _api = new AzureDevOpsClient(origin, login, pat, onRetry);
     }
 
     public Task<IReadOnlyList<Repository>> GetRepositoriesAsync(CancellationToken ct) =>

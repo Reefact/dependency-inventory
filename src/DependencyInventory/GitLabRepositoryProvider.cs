@@ -42,20 +42,16 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
 
     public string Origin => _origin.GroupUrl;
 
-    public GitLabRepositoryProvider(GitLabOrigin origin, string pat)
+    public GitLabRepositoryProvider(GitLabOrigin origin, string pat, Action<RetryNotice>? onRetry = null)
     {
         if (string.IsNullOrWhiteSpace(pat))
             throw new ArgumentException("Un jeton d'accès GitLab est nécessaire.");
 
         _origin = origin;
         _apiBase = origin.BaseUrl + "/api/v4";
-        _http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-        {
-            Timeout = TimeSpan.FromSeconds(120)
-        };
+        _http = RepositoryHttpClient.Create(onRetry);
         // PRIVATE-TOKEN is intentionally never logged or serialized.
         _http.DefaultRequestHeaders.TryAddWithoutValidation("PRIVATE-TOKEN", pat);
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("DependencyInventory/1.0");
     }
 
     public async Task<IReadOnlyList<Repository>> GetRepositoriesAsync(CancellationToken ct)

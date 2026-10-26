@@ -10,18 +10,14 @@ public sealed class AzureDevOpsClient : IDisposable
     private readonly HttpClient _http;
     private readonly AzureOrigin _origin;
 
-    public AzureDevOpsClient(AzureOrigin origin, string login, string pat)
+    public AzureDevOpsClient(AzureOrigin origin, string login, string pat, Action<RetryNotice>? onRetry = null)
     {
         _origin = origin;
-        _http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-        {
-            Timeout = TimeSpan.FromSeconds(120)
-        };
+        _http = RepositoryHttpClient.Create(onRetry);
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{login}:{pat}"));
         _http.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Basic", encoded);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("DependencyInventory/1.0");
     }
 
     public async Task<IReadOnlyList<Repository>> GetRepositoriesAsync(CancellationToken ct)
