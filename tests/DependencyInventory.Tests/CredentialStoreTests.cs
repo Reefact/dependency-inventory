@@ -50,7 +50,7 @@ public sealed class CredentialStoreTests
 
         var exception = await Assert.ThrowsAsync<NotSupportedException>(
             () => ResolveAsync(store, useFile: true, "unused"));
-        Assert.Contains("dependency-inventory login", exception.Message);
+        Assert.Contains("depinv login", exception.Message);
     }
 
     [Fact]

@@ -61,7 +61,7 @@ public static class CredentialResolver
             if (store is not null)
                 throw new NotSupportedException(
                     $"--credentials-file is not available with the {store.Name}: store the credentials " +
-                    "once with \"dependency-inventory login\".");
+                    "once with \"depinv login\".");
             var path = CredentialsFile.ResolvePath(provider, filePath);
             return new(await CredentialsFile.ReadAsync(path, provider, ct), CredentialSource.File);
         }
