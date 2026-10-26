@@ -70,6 +70,10 @@ Une seule branche analysée par dépôt, dans l'ordre main → release (y compri
 
 Les API Git Azure DevOps et GitLab permettent de lire le même commit de manière cohérente, sans clone local.
 
+## Limites de requêtes
+
+Quand Azure DevOps ou GitLab répond HTTP 429 (trop de requêtes), la requête est réessayée jusqu'à 5 tentatives au total. L'attente suit l'en-tête Retry-After s'il est présent, sinon un délai exponentiel avec une part aléatoire ; une attente ne dépasse jamais 60 s et un message l'annonce. Au-delà, l'erreur est reportée comme avant dans repositories.csv. Le délai de 120 s s'applique à chaque tentative, sans compter les attentes.
+
 ## Extraction NuGet
 
 Fichiers : *.csproj, *.fsproj, *.vbproj, *.props, *.targets et packages.config. Dossiers bin, obj, node_modules et .git ignorés.

@@ -112,7 +112,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
         try
         {
             using IRepositoryProvider api = RepositoryProviderFactory.Create(
-                settings.Provider, url, credentials);
+                settings.Provider, url, credentials, ScanConsole.RetryScheduled);
             var repositories = await api.GetRepositoriesAsync(cancellationToken);
             var selectedRepositories = RepositoryScanner.Select(repositories, settings.Repository);
             if (selectedRepositories.Count == 0)

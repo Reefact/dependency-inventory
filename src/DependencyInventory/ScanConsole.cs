@@ -25,6 +25,11 @@ public static class ScanConsole
     public static void Warning(string message) =>
         AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(message)}[/]");
 
+    public static void RetryScheduled(RetryNotice notice) =>
+        AnsiConsole.MarkupLine($"[yellow]Limite de requêtes atteinte (HTTP {(int)notice.Status}), " +
+            $"reprise dans {Math.Ceiling(notice.Delay.TotalSeconds):0} s " +
+            $"(tentative {notice.Attempt + 1}/{notice.MaxAttempts}).[/]");
+
     public static void DiagnosticsWritten() =>
         AnsiConsole.MarkupLine("[blue]Diagnostic complet : diagnostics.json[/]");
 
