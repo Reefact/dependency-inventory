@@ -262,9 +262,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
                 var version = package.Version;
                 var source = package.VersionSource;
                 if (package.Kind == PackageKind.Reference && version is null &&
-                    (file.Key.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
-                     file.Key.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase) ||
-                     file.Key.EndsWith(".vbproj", StringComparison.OrdinalIgnoreCase)))
+                    NuGetDependencyParser.IsProjectFile(file.Key))
                 {
                     version = NuGetDependencyParser.ResolveCentralVersion(file.Key, package.Id, parsedFiles);
                     if (version is not null) source = VersionSource.Central;

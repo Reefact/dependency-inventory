@@ -4,15 +4,19 @@ namespace DependencyScanner;
 
 public static class NuGetDependencyParser
 {
+    private static readonly string[] ProjectExtensions = [".csproj", ".fsproj", ".vbproj"];
+
+    /// <summary>True for .NET project files, the only files that can consume a central version.</summary>
+    public static bool IsProjectFile(string path) =>
+        ProjectExtensions.Any(x => path.EndsWith(x, StringComparison.OrdinalIgnoreCase));
+
     public static bool IsInterestingFile(string path)
     {
         var normalized = path.Replace('\\', '/');
         if (new[] { "/bin/", "/obj/", "/node_modules/", "/.git/" }
             .Any(x => normalized.Contains(x, StringComparison.OrdinalIgnoreCase))) return false;
 
-        return normalized.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) ||
-            normalized.EndsWith(".fsproj", StringComparison.OrdinalIgnoreCase) ||
-            normalized.EndsWith(".vbproj", StringComparison.OrdinalIgnoreCase) ||
+        return IsProjectFile(normalized) ||
             normalized.EndsWith(".props", StringComparison.OrdinalIgnoreCase) ||
             normalized.EndsWith(".targets", StringComparison.OrdinalIgnoreCase) ||
             normalized.EndsWith("/packages.config", StringComparison.OrdinalIgnoreCase);
