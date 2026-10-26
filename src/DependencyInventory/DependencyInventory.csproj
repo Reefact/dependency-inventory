@@ -6,10 +6,11 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
 
-    <!-- .NET tool identity. The package is Reefact.DependencyInventory; the command is `depinv`. -->
+    <!-- .NET tool identity. The package is DependencyInventory; the command is `depinv`. -->
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>depinv</ToolCommandName>
-    <PackageId>Reefact.DependencyInventory</PackageId>
+    <PackageId>DependencyInventory</PackageId>
+    <Title>Dependency Inventory</Title>
 
     <!-- Local/dev fallback only: the release workflow overrides it with -p:Version taken from the Git tag (v*). -->
     <Version>0.1.0-dev</Version>
@@ -20,6 +21,7 @@
     <PackageTags>nuget;dependencies;inventory;azure-devops;gitlab;dotnet-tool;cli</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
     <PackageProjectUrl>https://github.com/Reefact/dependency-inventory</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Reefact/dependency-inventory.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -30,6 +32,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="/" />
+    <None Include="..\..\icon.png" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />

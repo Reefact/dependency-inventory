@@ -5,7 +5,7 @@
 |  |  |
 | :-- | :-- |
 | **Build** | [![ci](https://github.com/Reefact/dependency-inventory/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Reefact/dependency-inventory/actions/workflows/ci.yml) |
-| **Package** | [![NuGet](https://img.shields.io/nuget/vpre/Reefact.DependencyInventory?logo=nuget)](https://www.nuget.org/packages/Reefact.DependencyInventory) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4) |
+| **Package** | [![NuGet](https://img.shields.io/nuget/vpre/DependencyInventory?logo=nuget)](https://www.nuget.org/packages/DependencyInventory) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4) |
 | **Project** | [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue)](https://github.com/Reefact/dependency-inventory/blob/main/LICENSE) |
 
 ## 🚨 The problem
@@ -31,13 +31,13 @@ There is no implicit filter: one or more `--pattern` or `--regex` options are re
 ## 📦 Install
 
 ~~~powershell
-dotnet tool install --global Reefact.DependencyInventory --prerelease
+dotnet tool install --global DependencyInventory --prerelease
 ~~~
 
 The command is then available as `depinv` (`depinv --help`). To update it:
 
 ~~~powershell
-dotnet tool update --global Reefact.DependencyInventory --prerelease
+dotnet tool update --global DependencyInventory --prerelease
 ~~~
 
 `--prerelease` is required while only preview versions are published (1.0.0 is not released yet): without it, the install fails with "no stable version". Drop it once a stable version exists.
