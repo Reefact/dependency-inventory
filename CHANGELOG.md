@@ -12,7 +12,7 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ### Fixed
 
-- **The installation commands shown in the README, and so on the nuget.org page, now include `--prerelease`.**
+- **The installation commands shown in the README, and therefore on the nuget.org page, now include `--prerelease`.**
   While only preview versions are published, `dotnet tool install` and `dotnet tool update` fail without it.
   Version 1.0.0-preview.1 shipped the commands without the flag.
 
