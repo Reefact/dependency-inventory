@@ -1,12 +1,25 @@
 # Changelog
 
-All notable, user-facing changes to **`depinv`** (the `Reefact.DependencyInventory` package) are documented here.
+All notable, user-facing changes to **`depinv`** (the `DependencyInventory` package) are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
+
+## [1.0.0-preview.3] - 2026-10-26
+
+### Changed
+
+- **Breaking: the package is now `DependencyInventory`, not `Reefact.DependencyInventory`.** The command is still
+  `depinv`. Versions 1.0.0-preview.1 and 1.0.0-preview.2 were published under the old id, which receives no
+  further release. To migrate, run `dotnet tool uninstall --global Reefact.DependencyInventory`, then
+  `dotnet tool install --global DependencyInventory --prerelease`.
+
+### Added
+
+- **A package icon**, shown on nuget.org and in NuGet clients.
 
 ## [1.0.0-preview.2] - 2026-10-26
 
@@ -45,6 +58,7 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory --prerelease` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
-[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.2...HEAD
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.3...HEAD
+[1.0.0-preview.3]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.2...v1.0.0-preview.3
 [1.0.0-preview.2]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.1...v1.0.0-preview.2
 [1.0.0-preview.1]: https://github.com/Reefact/dependency-inventory/releases/tag/v1.0.0-preview.1

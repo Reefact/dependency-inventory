@@ -1,12 +1,12 @@
 # Releasing
 
-The tool is published on nuget.org as `Reefact.DependencyInventory` (command: `depinv`).
+The tool is published on nuget.org as `DependencyInventory` (command: `depinv`).
 
 ## One-time setup
 
 1. On nuget.org, create a **trusted publishing policy**: owner `Reefact`, repository `dependency-inventory`, workflow `release.yml`.
 2. In the GitHub repository settings, add the **variable** `NUGET_USER` (Settings → Secrets and variables → Actions → Variables) with the nuget.org username (profile name, not the email). It is a variable, not a secret: it identifies the account and is not a credential.
-3. Check the `Reefact.DependencyInventory` package id is free on nuget.org. If nuget.org does not accept a first push of a not-yet-existing package through a policy, publish `0.1.0` once with an API key, then let the workflow publish every later version.
+3. Check the `DependencyInventory` package id is free on nuget.org. If nuget.org does not accept a first push of a not-yet-existing package through a policy, publish the first version once with an API key, then let the workflow publish every later version.
 
 ## Rehearsal
 
