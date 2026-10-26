@@ -49,7 +49,7 @@ public sealed class ScanSettings : CommandSettings
     public int Parallelism { get; init; } = 1;
 
     [CommandOption("--parallelism-mode <MODE>")]
-    [Description("Level run in parallel, required when --parallelism is above 1: files or repositories.")]
+    [Description("Parallelism mode (files or repositories); required when --parallelism is greater than 1.")]
     public ParallelismMode? ParallelismMode { get; init; }
 }
 
