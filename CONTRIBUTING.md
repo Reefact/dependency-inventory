@@ -20,6 +20,10 @@ The commit-lint workflow checks every commit of a pull request. For the same che
 git config core.hooksPath .githooks
 ~~~
 
+## Changelog
+
+[CHANGELOG.md](CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and lists what changes for a user of the tool: options, commands, reports, behavior, fixes. Add a line under `## [Unreleased]` (in `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or `Security`) in the same pull request as the change. Refactoring, tests and CI do not belong in it. A change to a report or to an option is flagged **Breaking**.
+
 ## Pull requests
 
 Fill in the [pull request template](.github/pull_request_template.md) and check only what you actually ran.
