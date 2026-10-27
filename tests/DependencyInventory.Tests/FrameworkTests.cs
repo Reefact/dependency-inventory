@@ -102,6 +102,19 @@ public sealed class FrameworkTests
     }
 
     [Fact]
+    public void ResolveDoesNotLetAnUnreadableProjectInheritItsFramework()
+    {
+        var files = new Dictionary<string, DeclaredFrameworks?>
+        {
+            ["/Directory.Build.props"] = Net8,
+            ["/src/Api/Api.csproj"] = null
+        };
+
+        Assert.Equal([new ResolvedFramework(null, FrameworkSource.Unresolved)],
+            FrameworkParser.Resolve("/src/Api/Api.csproj", files));
+    }
+
+    [Fact]
     public void ResolveReportsAPartlyUnresolvedDeclaration()
     {
         var files = new Dictionary<string, DeclaredFrameworks?>
@@ -187,12 +200,15 @@ public sealed class FrameworkTests
     }
 
     [Fact]
-    public async Task UnreadableProjectsAreReportedInTheCoverage()
+    public async Task UnreadableProjectsAreListedAsUnresolved()
     {
         var result = await ScanAsync(Provider(), "broken");
 
-        var only = Assert.Single(result.Frameworks);
-        Assert.Equal("net6.0", only.Framework);
+        Assert.Equal(["/src/A.csproj net6.0 Project", "/src/B.csproj  Unresolved"],
+            result.Frameworks.Select(x => $"{x.ProjectFile} {x.Framework} {x.FrameworkSource}"));
+        Assert.Equal(CoverageStatus.Partial, result.Coverage.Status);
+        Assert.Equal(1, result.Coverage.FilesExamined);
+        Assert.Equal(2, result.Coverage.Projects);
         Assert.StartsWith("/src/B.csproj: ", result.Coverage.Details);
     }
 
@@ -217,7 +233,7 @@ public sealed class FrameworkTests
             collectDiagnostics: false, ScanParallelism.Sequential, progress: null, CancellationToken.None);
 
         Assert.Equal(["api", "broken", "nobranch", "old", "scripts"], result.Coverage.Select(x => x.Repository));
-        Assert.Equal(5, result.Frameworks.Count);
+        Assert.Equal(6, result.Frameworks.Count);
         Assert.Equal(1, result.IncompleteRepositories);
         Assert.Empty(result.Diagnostics);
     }

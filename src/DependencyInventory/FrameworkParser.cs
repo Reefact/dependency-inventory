@@ -60,13 +60,14 @@ public static class FrameworkParser
     /// <summary>
     /// The frameworks of a project: its own declarations, otherwise those of the nearest Directory.Build.props
     /// (the only one MSBuild imports automatically). <paramref name="files"/> holds every file found, null for
-    /// a file that could not be read. Always returns at least one entry.
+    /// a file that could not be read; an unreadable project is unresolved. Always returns at least one entry.
     /// </summary>
     public static IReadOnlyList<ResolvedFramework> Resolve(
         string projectFile, IReadOnlyDictionary<string, DeclaredFrameworks?> files)
     {
-        var own = files.GetValueOrDefault(projectFile) ?? DeclaredFrameworks.None;
-        if (!own.DeclaresNothing) return Entries(own, FrameworkSource.Project);
+        if (files.TryGetValue(projectFile, out var own) && own is null)
+            return [new ResolvedFramework(null, FrameworkSource.Unresolved)];
+        if (own is { DeclaresNothing: false }) return Entries(own, FrameworkSource.Project);
 
         var projectDirectory = projectFile[..(projectFile.LastIndexOf('/') + 1)];
         var nearest = files
