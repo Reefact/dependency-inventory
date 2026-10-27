@@ -12,6 +12,8 @@ public static class DepinvApp
         {
             config.SetApplicationName("depinv");
             config.SetApplicationVersion(AppVersion.Current);
+            // An unknown option, such as a misspelled --patern, is an error instead of being silently ignored.
+            config.UseStrictParsing();
             config.AddCommand<PackagesCommand>("packages")
                 .WithAlias("pkg")
                 .WithDescription("Find the NuGet packages matching --pattern or --regex in every repository.");
