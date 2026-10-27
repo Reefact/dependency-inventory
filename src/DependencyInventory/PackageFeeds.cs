@@ -23,7 +23,7 @@ public interface IPackageFeed : IDisposable
     /// <summary>The .nuspec of a version; null when the version is not in the feed.</summary>
     Task<string?> GetNuspecAsync(string id, string version, CancellationToken ct);
 
-    /// <summary>The .nupkg of a version; null when the version is not in the feed.</summary>
+    /// <summary>The .nupkg of a version, as a seekable stream to dispose; null when the version is not in the feed.</summary>
     Task<Stream?> GetPackageAsync(string id, string version, CancellationToken ct);
 }
 
@@ -166,10 +166,23 @@ public sealed class AzureArtifactsFeed : IPackageFeed
         using var response = await SendAsync(
             $"{await PackageBaseAsync(ct)}{Lower(id)}/{Normalized(version)}/{Lower(id)}.{Normalized(version)}.nupkg", ct);
         if (response is null) return null;
-        var buffer = new MemoryStream();
-        await response.Content.CopyToAsync(buffer, ct);
-        buffer.Position = 0;
-        return buffer;
+
+        // A package can be large and several are read at once: it goes to a temporary file, deleted when the
+        // stream is closed, rather than to memory. The ZIP reader needs a seekable stream.
+        var file = new FileStream(Path.Combine(Path.GetTempPath(), $"depinv-{Guid.NewGuid():N}.nupkg"),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920,
+            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+        try
+        {
+            await response.Content.CopyToAsync(file, ct);
+            file.Position = 0;
+            return file;
+        }
+        catch
+        {
+            await file.DisposeAsync();
+            throw;
+        }
     }
 
     /// <summary>The package content base address, read once from the service index.</summary>
