@@ -1,0 +1,105 @@
+"""Unit tests of build_chart.py: python3 -m unittest discover -s .claude/skills/framework-support-chart/scripts"""
+
+import contextlib
+import datetime as dt
+import io
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import build_chart  # noqa: E402
+
+AS_OF = dt.date(2026, 10, 27)
+EOL = {"6.0": dt.date(2024, 11, 12), "8.0": dt.date(2026, 11, 10), "10.0": dt.date(2028, 11, 14)}
+
+
+def status(framework: str, lang: str = "en"):
+    text = dict(build_chart.TEXT[lang], lang=lang)
+    return build_chart.framework_status(framework, EOL, AS_OF, build_chart.add_months(AS_OF, 6), text)
+
+
+class FrameworkStatusTests(unittest.TestCase):
+    def test_dotnet_channels_follow_their_end_of_support(self):
+        self.assertEqual(status("net6.0")[0], "unsupported")
+        self.assertEqual(status("net8.0")[0], "ending")
+        self.assertEqual(status("net8.0-windows")[0], "ending")
+        self.assertEqual(status("net10.0")[0], "supported")
+
+    def test_net_framework_4_7_and_later_follow_windows(self):
+        for framework in ("net47", "net471", "net472", "net48", "net481"):
+            with self.subTest(framework):
+                self.assertEqual(status(framework)[:2], ("supported", build_chart.TEXT["en"]["follows_windows"]))
+
+    def test_net_framework_4_6_2_ends_on_january_12_2027(self):
+        self.assertEqual(status("net462"), ("ending", "end of support on January 12, 2027", dt.date(2027, 1, 12)))
+        self.assertEqual(status("net461")[0], "unsupported")
+
+    def test_netstandard_has_no_end_of_support(self):
+        self.assertEqual(status("netstandard2.0")[0], "supported")
+
+    def test_an_unrecognized_framework_is_not_reported_as_missing_from_the_feed(self):
+        for framework in ("uap10.0", "monoandroid", "net99.0"):
+            with self.subTest(framework):
+                self.assertEqual(status(framework)[:2], ("unknown", build_chart.TEXT["en"]["unrecognized"]))
+        self.assertNotEqual(build_chart.TEXT["en"]["unrecognized"], build_chart.TEXT["en"]["missing"])
+
+
+class DateTests(unittest.TestCase):
+    def test_add_months_keeps_the_day_or_takes_the_last_day_of_a_shorter_month(self):
+        self.assertEqual(build_chart.add_months(dt.date(2026, 1, 31), 6), dt.date(2026, 7, 31))
+        self.assertEqual(build_chart.add_months(dt.date(2026, 8, 31), 6), dt.date(2027, 2, 28))
+        self.assertEqual(build_chart.add_months(dt.date(2027, 8, 31), 6), dt.date(2028, 2, 29))
+        self.assertEqual(build_chart.add_months(dt.date(2026, 10, 27), 6), dt.date(2027, 4, 27))
+
+    def test_dates_are_spelled_in_the_chart_language_whatever_the_locale(self):
+        self.assertEqual(build_chart.format_date(dt.date(2026, 11, 10), "en"), "November 10, 2026")
+        self.assertEqual(build_chart.format_date(dt.date(2026, 11, 10), "fr"), "10 novembre 2026")
+
+
+class VersionTests(unittest.TestCase):
+    def test_versions_are_normalized_as_nuget_does(self):
+        self.assertEqual(build_chart.normalize_version("2.0"), "2.0.0")
+        self.assertEqual(build_chart.normalize_version("1.0.0.0"), "1.0.0")
+        self.assertEqual(build_chart.normalize_version("2.1.0-Beta.6+sha.1"), "2.1.0-beta.6")
+
+    def test_versions_are_ordered_as_nuget_does(self):
+        versions = ["2.0.0", "2.0.0-beta.12", "1.0.3-rc.1", "2.0.0-beta.6", "2.0.0-rc.2", "1.0.2"]
+        self.assertEqual(sorted(versions, key=build_chart.version_key),
+                         ["1.0.2", "1.0.3-rc.1", "2.0.0-beta.6", "2.0.0-beta.12", "2.0.0-rc.2", "2.0.0"])
+
+
+class ChartTests(unittest.TestCase):
+    def test_the_chart_counts_reference_declarations(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / "dependencies.csv").write_text(
+                "Project;Repository;File;Package;Version;Kind\n"
+                # Two conditional declarations in one project file are two references, not two projects.
+                "p;r;/src/A.csproj;Contoso.Core;2.0;Reference\n"
+                "p;r;/src/A.csproj;Contoso.Core;2.0.0;Reference\n"
+                "p;r;/Directory.Packages.props;Contoso.Core;2.0.0;CentralVersion\n"
+                "p;r;/src/B.csproj;Contoso.Core;$(CoreVersion);Reference\n", encoding="utf-8-sig")
+            (folder / "package-frameworks.csv").write_text(
+                "Package;Version;Framework\nContoso.Core;2.0.0;net6.0\n", encoding="utf-8-sig")
+            (folder / "eol.json").write_text(json.dumps({"6.0": "2024-11-12"}))
+            sys.argv = ["build_chart.py", "--dependencies", str(folder / "dependencies.csv"),
+                        "--frameworks", str(folder / "package-frameworks.csv"), "--title", "Chart",
+                        "--as-of", "2026-10-27", "--eol-file", str(folder / "eol.json"),
+                        "--output", str(folder / "chart.html")]
+            with contextlib.redirect_stdout(io.StringIO()):
+                build_chart.main()
+            page = (folder / "chart.html").read_text(encoding="utf-8")
+            data = json.loads(page.split("const DATA = ", 1)[1].split(";\n", 1)[0])
+
+        version = data["packages"][0]["versions"]
+        self.assertEqual([(v["version"], v["count"], v["countLabel"]) for v in version], [("2.0.0", 2, "2 references")])
+        self.assertEqual(version[0]["status"], "unsupported")
+        self.assertEqual(data["text"]["axis"], "Number of direct references to this version")
+        self.assertIn("1 reference without a literal version not shown.", data["footer"])
+
+
+if __name__ == "__main__":
+    unittest.main()

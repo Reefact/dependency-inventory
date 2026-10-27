@@ -1,13 +1,16 @@
 ---
 name: framework-support-chart
-description: Builds a bar chart of how many projects use each version of a set of NuGet packages, with the .NET target framework of every version and its support status (out of support in red stripes, support ending soon in orange stripes), as an HTML page and a PNG for wikis such as Confluence. Use it whenever someone wants to see, refresh or share which package versions are in use across their repositories and whether those versions target an obsolete or soon-unsupported .NET, even if they only say "regenerate the chart", "update the version graph" or "which of our libraries are on an old .NET".
+description: Builds a bar chart of how many direct references each version of a set of NuGet packages has across repositories, with the .NET target framework of every version and its support status (out of support in red stripes, support ending soon in orange stripes), as an HTML page and a PNG for wikis such as Confluence. Use it whenever someone wants to see, refresh or share which package versions are in use across their repositories and whether those versions target an obsolete or soon-unsupported .NET, even if they only say "regenerate the chart", "update the version graph" or "which of our libraries are on an old .NET".
 ---
 
 # Framework support chart
 
-The chart answers one question for a set of internal NuGet packages: which versions do the projects use,
-and does each of those versions target a .NET that is still supported? Each package gets a band, each
-version a bar whose length is the number of projects referencing it. The label shows the version and its
+The chart answers one question for a set of internal NuGet packages: which versions do the repositories
+use, and does each of those versions target a .NET that is still supported? Each package gets a band, each
+version a bar whose length is its number of direct references. A reference is one declaration in a project
+or MSBuild file, as `dependencies.csv` lists them: it is not a count of projects, since a project file may
+declare a package twice under conditions and a shared `.props` file declares it for many projects. Keep the
+chart's wording on references. The label shows the version and its
 target framework, e.g. `2.0.1 (net9.0)`. Bars of a version whose framework is out of support are striped
 red; those whose support ends within a few months are striped orange; a legend gives the dates.
 
@@ -57,7 +60,8 @@ node <skill-dir>/scripts/render_png.js <dir>/chart.html <dir>/chart.png
 
 Write the outputs in the scratchpad, or wherever the user asks; they are not part of the repository.
 
-`build_chart.py` prints the packages, the reference count and one line per framework group. Read it: the
+`build_chart.py` prints the packages, the reference count and one line per framework group. Its unit tests
+run with `python3 -m unittest discover -s <skill-dir>/scripts`. Read it: the
 total should match the number of references the user expects, and each framework should have the status
 you expect from its dates. Then look once at the PNG for clipped labels or overlaps.
 
@@ -86,10 +90,12 @@ when their support ends.
   Microsoft's lifecycle page for .NET Framework and update the table if a date has changed.
 - A version that ships several frameworks takes the status of its best-supported one: consumers can use
   that one. Each framework is still colored in the label.
-- A version missing from `package-frameworks.csv` (not read from the feed) shows `(?)` and counts in an
-  "unknown framework" legend line, so a gap in the data is never shown as healthy.
+- A version missing from `package-frameworks.csv` (not read from the feed) shows `(?)` and counts in a
+  "framework unknown" legend line, so a gap in the data is never shown as healthy. A framework that was read
+  but that the script does not classify (`uap10.0`, `monoandroid`...) has its own "framework not recognized"
+  line: the data is there, the classification is missing.
 - References without a literal version (an MSBuild property, a range) cannot be placed on a bar; the
   footer counts them.
 
-Versions are ordered as NuGet orders them, prereleases before their release. Packages are ordered by
-number of references; the seven most used get the categorical colors in a fixed order, the others grey.
+Versions are ordered as NuGet orders them, prereleases before their release; `2.0` and `2.0.0` are one
+version. Packages are ordered by number of references; the seven most used get the categorical colors in a fixed order, the others grey.

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Build the framework support chart: projects per package version, with each version's .NET target
-frameworks and their support status on a given date.
+"""Build the framework support chart: direct references per package version, with each version's .NET
+target frameworks and their support status on a given date.
 
-Inputs are two reports of depinv: dependencies.csv (depinv packages) gives the references per package
-version, package-frameworks.csv (depinv feed) gives the frameworks each published version ships.
+Inputs are two reports of depinv: dependencies.csv (depinv packages) has one line per reference declaration
+(not per project: a project file may declare a package twice under conditions, a shared .props file declares
+it for many projects), package-frameworks.csv (depinv feed) gives the frameworks each published version ships.
 Support dates of .NET (Core) come from Microsoft's release metadata; .NET Framework dates from the
 table below. Output: a self-contained HTML page (and a PNG with scripts/render_png.js).
 """
 
 import argparse
+import calendar
 import csv
 import datetime as dt
 import fnmatch
@@ -25,15 +27,16 @@ RELEASES_INDEX_URLS = [
     "https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json",
 ]
 
-# .NET Framework is not in the release metadata. Microsoft lifecycle, checked in October 2026:
-# 4.5.2, 4.6 and 4.6.1 ended on 2022-04-26; 4.5.1 and older 4.x on 2016-01-12; 4.6.2, 4.7 and 4.7.1 end
-# on 2027-01-12; 3.5 SP1 ends on 2029-01-09; 4.7.2 and later follow the support of the Windows version.
+# .NET Framework is not in the release metadata. Microsoft lifecycle, checked in October 2026
+# (https://learn.microsoft.com/lifecycle/products/microsoft-net-framework): 4.5.2, 4.6 and 4.6.1 ended on
+# 2022-04-26; 4.5.1 and older 4.x on 2016-01-12; 4.6.2 ends on 2027-01-12; 3.5 SP1 on 2029-01-09; 4.7 and
+# later have no end date and follow the support of the Windows version they run on.
 NET_FRAMEWORK_EOL = {
     "net20": "2011-07-12", "net30": "2011-07-12", "net35": "2029-01-09",
     "net40": "2016-01-12", "net403": "2016-01-12", "net45": "2016-01-12", "net451": "2016-01-12",
     "net452": "2022-04-26", "net46": "2022-04-26", "net461": "2022-04-26",
-    "net462": "2027-01-12", "net47": "2027-01-12", "net471": "2027-01-12",
-    "net472": None, "net48": None, "net481": None,
+    "net462": "2027-01-12",
+    "net47": None, "net471": None, "net472": None, "net48": None, "net481": None,
 }
 
 # Seven categorical hues for the packages with the most references, in this order; the others are grey.
@@ -41,50 +44,54 @@ SERIES_COLORS = ["--s0", "--s1", "--s2", "--s3", "--s4", "--s5", "--s6"]
 
 TEXT = {
     "en": {
-        "axis": "Number of projects referencing this version",
+        "axis": "Number of direct references to this version",
         "tableSummary": "Show the data as a table",
-        "tableColumns": ["Package", "Version", "Frameworks", "Support", "Projects"],
+        "tableColumns": ["Package", "Version", "Target frameworks", "Support", "References"],
         "colon": ": ",
-        "uses": lambda n: f"{n} use" + ("" if n == 1 else "s"),
-        "projects": lambda n: f"{n} project" + ("" if n == 1 else "s"),
         "references": lambda n: f"{n} reference" + ("" if n == 1 else "s"),
         "unsupported_since": lambda d: f"out of support since {d}",
         "ends_on": lambda d: f"end of support on {d}",
         "supported_until": lambda d: f"supported until {d}",
         "follows_windows": "supported with the Windows version it runs on",
         "netstandard": "no end of support, runs on every supported .NET",
-        "unknown": "version not read from the feed",
+        "unrecognized": "framework not recognized: support status unknown",
+        "missing": "version missing from the feed report",
         "legend_supported": "Supported",
-        "legend_unknown": "Unknown framework",
+        "legend_unrecognized": "Framework not recognized",
+        "legend_missing": "Framework unknown",
         "footer": lambda packages, refs: f"{packages} packages · {refs} direct references · "
-                                         "Versions in semantic order · Central versions excluded",
+                                         "Versions in semantic order · Central version declarations excluded",
         "status_date": lambda d, months: f"Support status on {d}; orange when support ends within {months} months.",
         "unresolved": lambda n: f"{n} reference{'' if n == 1 else 's'} without a literal version not shown.",
     },
     "fr": {
-        "axis": "Nombre de projets référençant cette version",
+        "axis": "Nombre de références directes à cette version",
         "tableSummary": "Voir les données sous forme de tableau",
-        "tableColumns": ["Package", "Version", "Frameworks", "Support", "Projets"],
+        "tableColumns": ["Package", "Version", "Frameworks cibles", "Prise en charge", "Références"],
         "colon": " : ",
-        "uses": lambda n: f"{n} utilisation" + ("" if n == 1 else "s"),
-        "projects": lambda n: f"{n} projet" + ("" if n == 1 else "s"),
         "references": lambda n: f"{n} référence" + ("" if n == 1 else "s"),
-        "unsupported_since": lambda d: f"plus supporté depuis le {d}",
-        "ends_on": lambda d: f"fin de support le {d}",
-        "supported_until": lambda d: f"supporté jusqu'au {d}",
-        "follows_windows": "supporté avec la version de Windows qui l'exécute",
-        "netstandard": "pas de fin de support, tourne sur tout .NET supporté",
-        "unknown": "version non lue dans le flux",
-        "legend_supported": "Supporté",
-        "legend_unknown": "Framework inconnu",
+        "unsupported_since": lambda d: f"n'est plus pris en charge depuis le {d}",
+        "ends_on": lambda d: f"fin de prise en charge le {d}",
+        "supported_until": lambda d: f"pris en charge jusqu'au {d}",
+        "follows_windows": "pris en charge selon le cycle de vie de Windows",
+        "netstandard": "compatible avec toutes les versions de .NET prises en charge",
+        "unrecognized": "framework non reconnu : prise en charge inconnue",
+        "missing": "version absente du rapport du flux",
+        "legend_supported": "Pris en charge",
+        "legend_unrecognized": "Framework non reconnu",
+        "legend_missing": "Framework inconnu",
         "footer": lambda packages, refs: f"{packages} bibliothèques · {refs} références directes · "
-                                         "Versions triées par ordre sémantique · CentralVersion exclues",
-        "status_date": lambda d, months: f"Statut de support au {d} ; orange quand le support s'arrête "
-                                         f"dans moins de {months} mois.",
+                                         "Versions triées par ordre sémantique · "
+                                         "Déclarations de versions centralisées exclues",
+        "status_date": lambda d, months: f"Statut de prise en charge au {d} ; orange quand la prise en charge "
+                                         f"s'arrête dans moins de {months} mois.",
         "unresolved": lambda n: f"{n} référence{'' if n == 1 else 's'} sans version littérale non affichée{'' if n == 1 else 's'}.",
     },
 }
 
+# Month names are spelled out: strftime("%B") follows the machine's locale, whatever the chart's language.
+MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+             "October", "November", "December"]
 MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
              "octobre", "novembre", "décembre"]
 
@@ -92,7 +99,7 @@ MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "
 def format_date(value: dt.date, lang: str) -> str:
     if lang == "fr":
         return f"{value.day} {MONTHS_FR[value.month - 1]} {value.year}"
-    return f"{value:%B} {value.day}, {value.year}"
+    return f"{MONTHS_EN[value.month - 1]} {value.day}, {value.year}"
 
 
 def read_csv(path: Path) -> list[dict]:
@@ -147,14 +154,14 @@ def framework_status(framework: str, eol: dict, today: dt.date, warn_until: dt.d
     if match:
         channel = f"{match.group(1)}.{match.group(2)}"
         if channel not in eol:
-            return "unknown", text["unknown"], None
+            return "unknown", text["unrecognized"], None
         end = eol[channel]
     elif moniker in NET_FRAMEWORK_EOL:
         end = dt.date.fromisoformat(NET_FRAMEWORK_EOL[moniker]) if NET_FRAMEWORK_EOL[moniker] else None
         if end is None:
             return "supported", text["follows_windows"], None
     else:
-        return "unknown", text["unknown"], None
+        return "unknown", text["unrecognized"], None
     if end is None:
         return "supported", "", None
     when = format_date(end, text["lang"])
@@ -169,9 +176,10 @@ SEVERITY = {"unsupported": 0, "ending": 1, "unknown": 2, "supported": 3}
 
 
 def add_months(day: dt.date, months: int) -> dt.date:
+    """The same day, months later; the last day of the month when that month is shorter."""
     month = day.month - 1 + months
     year, month = day.year + month // 12, month % 12 + 1
-    return day.replace(year=year, month=month, day=min(day.day, 28))
+    return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
 
 
 def main() -> None:
@@ -199,6 +207,7 @@ def main() -> None:
     def included(package: str) -> bool:
         return not args.include or any(fnmatch.fnmatch(package.lower(), p.lower()) for p in args.include)
 
+    # One line of dependencies.csv is one reference declaration: that is what the chart counts.
     counts: dict[tuple[str, str], int] = defaultdict(int)
     names: dict[str, str] = {}
     unresolved = 0
@@ -231,7 +240,7 @@ def main() -> None:
         for version, count in sorted(versions, key=lambda v: version_key(v[0])):
             shipped = frameworks.get((package, version)) or ["?"]
             statuses = [framework_status(f, eol, args.as_of, warn_until, text) if f != "?"
-                        else ("unknown", text["unknown"], None) for f in shipped]
+                        else ("unknown", text["missing"], None) for f in shipped]
             # A package version is as healthy as its best-supported framework: a consumer can use that one.
             status = max((s for s, _, _ in statuses), key=SEVERITY.get)
             for f, (s, _, end) in zip(shipped, statuses):
@@ -240,13 +249,13 @@ def main() -> None:
             rows.append({
                 "version": version,
                 "count": count,
-                "countLabel": text["projects"](count),
+                "countLabel": text["references"](count),
                 "frameworks": [{"name": f, "status": s} for f, (s, _, _) in zip(shipped, statuses)],
                 "status": status if status in ("unsupported", "ending") else "",
                 "notes": sorted({n for _, n, _ in statuses if n}),
             })
         total = sum(c for _, c in versions)
-        packages.append({"name": names[package], "count": total, "countLabel": text["uses"](total), "versions": rows})
+        packages.append({"name": names[package], "count": total, "countLabel": text["references"](total), "versions": rows})
     for index, package in enumerate(packages):
         package["color"] = SERIES_COLORS[index] if index < len(SERIES_COLORS) else "--s-other"
 
@@ -261,10 +270,17 @@ def main() -> None:
         refs = sum(n for (s, _), n in legend_counts.items() if s == "supported")
         legend.append({"status": "", "title": text["legend_supported"],
                        "text": f"{', '.join(supported)} — {text['references'](refs)}"})
-    unknown_refs = sum(n for (s, _), n in legend_counts.items() if s == "unknown")
-    if unknown_refs:
-        legend.append({"status": "", "title": text["legend_unknown"],
-                       "text": f"{text['unknown']} — {text['references'](unknown_refs)}"})
+    # A framework read from the feed but not classified, and a version missing from the feed report, are
+    # different problems: the first needs the classification above, the second another feed read.
+    unrecognized = sorted(f for (s, f) in legend_counts if s == "unknown" and f != "?")
+    if unrecognized:
+        refs = sum(n for (s, f), n in legend_counts.items() if s == "unknown" and f != "?")
+        legend.append({"status": "", "title": text["legend_unrecognized"],
+                       "text": f"{', '.join(unrecognized)} — {text['references'](refs)}"})
+    missing_refs = legend_counts.get(("unknown", "?"), 0)
+    if missing_refs:
+        legend.append({"status": "", "title": text["legend_missing"],
+                       "text": f"{text['missing']} — {text['references'](missing_refs)}"})
 
     references = sum(counts.values())
     footer = [text["footer"](len(packages), references),
