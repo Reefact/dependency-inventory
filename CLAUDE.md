@@ -12,7 +12,7 @@
 ## Repository map
 
 - `src/DependencyInventory/`
-  - `Program.cs`, `ScanCommand.cs`: CLI options, prompts, validation and exit codes.
+  - `Program.cs`, `DepinvApp.cs`, `ScanCommand.cs`: commands (`packages`, `login`, `logout`), CLI options, prompts, validation and exit codes.
   - `RepositoryScanner.cs`, `RepositoryDiagnostics.cs`: scan of the repositories, without console access.
   - `ScanConsole.cs`: console output (header, messages, progress bar, summary).
   - `RepositoryProviders.cs`, `AzureDevOpsClient.cs`, `GitLabRepositoryProvider.cs`: Git hosting APIs.

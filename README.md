@@ -19,14 +19,15 @@ Point `depinv` at an Azure DevOps project or a GitLab group, say which packages 
 the packages whose name starts with `Serilog.`), and read the answer in a CSV file:
 
 ~~~powershell
-depinv --provider azure --url "https://dev.azure.com/Organization/Project" --regex "^Serilog([.]|$)"
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --regex "^Serilog([.]|$)"
 ~~~
 
 It reads the files of each repository's selected branch through the provider's API, without cloning anything,
 extracts the NuGet references, keeps the ones matching your filters and writes the reports. It is read-only:
 the tool only sends GET requests.
 
-There is no implicit filter: one or more `--pattern` or `--regex` options are required.
+There is no implicit filter: one or more `--pattern` or `--regex` options are required. `depinv pkg` is a shorter
+alias of `depinv packages`.
 
 ## 📦 Install
 
@@ -58,7 +59,7 @@ dotnet tool install --global DependencyInventory --prerelease
 The URL designates the Azure DevOps project, not a Git repository.
 
 ~~~powershell
-depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*"
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*"
 ~~~
 
 The Azure DevOps login and PAT are needed (see Authentication); the PAT needs the Code (Read) scope.
@@ -68,7 +69,7 @@ The Azure DevOps login and PAT are needed (see Authentication); the PAT needs th
 The URL designates the GitLab group, possibly a subgroup, for example https://gitlab.example.com/red/web. Projects of subgroups are included.
 
 ~~~powershell
-depinv --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Contoso.*"
+depinv packages --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Contoso.*"
 ~~~
 
 Only a PAT is needed (see Authentication), with the read_api scope and access rights on the group. The GitLab provider uses PRIVATE-TOKEN; no login is needed.
@@ -112,11 +113,11 @@ Repeatable options, combined with OR:
 - --case-sensitive: optional; matching is case-insensitive by default.
 
 ~~~powershell
-depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --pattern "Microsoft.Extensions.*"
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --pattern "Microsoft.Extensions.*"
 
-depinv --provider gitlab --url "https://gitlab.example.com/red/web" --regex "^Serilog([.]|$)"
+depinv packages --provider gitlab --url "https://gitlab.example.com/red/web" --regex "^Serilog([.]|$)"
 
-depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "*.Hosting" --regex "^Contoso[.]Core[.]"
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "*.Hosting" --regex "^Contoso[.]Core[.]"
 ~~~
 
 Each dependency appears once per declaration, even when it matches several filters. The MatchedFilters column keeps the filters that found the package.
@@ -158,7 +159,7 @@ By default the scan is sequential: one repository after the other, one file afte
 Only one level runs in parallel, so --parallelism is also the maximum number of simultaneous HTTP requests. Reports are identical, in the same order, whatever the parallelism and the mode. More parallelism raises the risk of HTTP 429; such responses are retried (see Transient errors), but a moderate value (2 to 4) reduces the risk of hitting the providers' rate limits.
 
 ~~~powershell
-depinv --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Contoso.*" --parallelism 4 --parallelism-mode repositories
+depinv packages --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Contoso.*" --parallelism 4 --parallelism-mode repositories
 ~~~
 
 ### Transient errors
@@ -170,7 +171,7 @@ The 120 s timeout applies to each attempt, including the time needed to read the
 ### Diagnosing a repository
 
 ~~~powershell
-depinv --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --repository api-order-bo --diagnostics
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --repository api-order-bo --diagnostics
 ~~~
 
 The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined.

@@ -8,6 +8,11 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: the package scan is now the `packages` command (alias `pkg`).** It is no longer the default command:
+  replace `depinv --provider ...` with `depinv packages --provider ...`. The options and reports are unchanged.
+
 ## [1.0.0-preview.3] - 2026-10-26
 
 ### Changed
