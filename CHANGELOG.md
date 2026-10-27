@@ -8,13 +8,6 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
-### Added
-
-- **The .NET target frameworks are inventoried too.** A new `frameworks.csv` report lists, for every project file
-  (and `.props` / `.targets` file) of the scanned repositories, the frameworks it declares through
-  `TargetFramework`, `TargetFrameworks` or the legacy `TargetFrameworkVersion` (`v4.7.2` is written `net472`).
-  `report.json` gains a `Frameworks` array. The package filters do not apply to it.
-
 ## [1.0.0-preview.3] - 2026-10-26
 
 ### Changed
