@@ -102,6 +102,9 @@ public enum DependencyKind { Package, FrameworkReference }
 [JsonConverter(typeof(JsonStringEnumConverter<PackageStatus>))]
 public enum PackageStatus { OK, NotFound, Failed }
 
+[JsonConverter(typeof(JsonStringEnumConverter<FrameworksFrom>))]
+public enum FrameworksFrom { Nuspec, PackageFolders }
+
 /// <summary>One target framework shipped by one published package version.</summary>
 public sealed record PackageFramework(string Package, string Version, string Framework);
 
@@ -117,8 +120,54 @@ public sealed record PackageDependency(
     string? VersionRange,
     DependencyKind Kind);
 
-/// <summary>Whether a package version could be read; no version when the package itself is unknown.</summary>
-public sealed record PackageCoverage(string Package, string Version, PackageStatus Status, string? Details);
+/// <summary>
+/// The metadata of a .nuspec, as written in it: booleans stay text, several package types are joined with " | ".
+/// </summary>
+public sealed record PackageMetadata(
+    string? Id,
+    string? Title,
+    string? Authors,
+    string? Owners,
+    string? Description,
+    string? Summary,
+    string? ReleaseNotes,
+    string? Copyright,
+    string? Language,
+    string? Tags,
+    string? ProjectUrl,
+    string? IconUrl,
+    string? Icon,
+    string? Readme,
+    string? License,
+    string? LicenseType,
+    string? LicenseUrl,
+    string? RequireLicenseAcceptance,
+    string? DevelopmentDependency,
+    string? Serviceable,
+    string? MinClientVersion,
+    string? PackageTypes,
+    string? RepositoryType,
+    string? RepositoryUrl,
+    string? RepositoryBranch,
+    string? RepositoryCommit);
+
+/// <summary>How a version is published in the feed: its date, whether it is listed, and the views it is in.</summary>
+public sealed record PackagePublication(string Version, DateTimeOffset? Published, bool? Listed, IReadOnlyList<string> Views);
+
+/// <summary>
+/// Everything read about one package version; no version when the package itself is unknown. Details holds
+/// the reason a version could not be read, or why its publication is unknown.
+/// </summary>
+public sealed record PackageInfo(
+    string Package,
+    string Version,
+    PackageStatus Status,
+    string? Details,
+    FrameworksFrom? FrameworksFrom = null,
+    DateTimeOffset? Published = null,
+    bool? Listed = null,
+    IReadOnlyList<string>? Views = null,
+    PackageMetadata? Metadata = null);
 
 public sealed record FeedReport(
     DateTimeOffset ScannedAt,
@@ -127,4 +176,4 @@ public sealed record FeedReport(
     IReadOnlyList<DependencyFilter> DependencyFilters,
     IReadOnlyList<PackageFramework> Frameworks,
     IReadOnlyList<PackageDependency> Dependencies,
-    IReadOnlyList<PackageCoverage> Packages);
+    IReadOnlyList<PackageInfo> Packages);

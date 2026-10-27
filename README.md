@@ -199,7 +199,12 @@ The feed-report folder (configurable with --output) contains:
 - package-frameworks.csv: one line per package version and framework shipped;
 - package-dependencies.csv: one line per package version, framework and dependency, with its VersionRange and its
   Kind: Package, or FrameworkReference (such as Microsoft.AspNetCore.App, whose version is the framework's);
-- packages.csv: whether each package version could be read: OK, NotFound or Failed;
+- packages.csv: one line per package version with everything else known about it: whether it could be read (Status:
+  OK, NotFound or Failed, and Details), where its frameworks were read (FrameworksFrom: Nuspec or PackageFolders),
+  its publication in the feed (Published, Listed, Views) and every metadata of its .nuspec (Id, Title, Authors,
+  Owners, Description, Summary, ReleaseNotes, Copyright, Language, Tags, ProjectUrl, IconUrl, Icon, Readme, License,
+  LicenseType, LicenseUrl, RequireLicenseAcceptance, DevelopmentDependency, Serviceable, MinClientVersion,
+  PackageTypes, RepositoryType, RepositoryUrl, RepositoryBranch, RepositoryCommit);
 - report.json: full JSON report, including the applied filters.
 
 Package and Version are written as requested, so these files join dependencies.csv on these two columns.
