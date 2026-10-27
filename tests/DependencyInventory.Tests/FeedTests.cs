@@ -513,6 +513,28 @@ public sealed class FeedTests
     }
 
     [Fact]
+    public async Task ThePackageIsReadFromATemporaryFileDeletedOnceClosed()
+    {
+        var (feed, _) = Client(new()
+        {
+            [Index] = IndexResponse,
+            [Base + "a/1.0.0/a.1.0.0.nupkg"] = Ok("zip content")
+        });
+        using (feed)
+        {
+            var package = await feed.GetPackageAsync("A", "1.0.0", default);
+
+            var file = Assert.IsType<FileStream>(package);
+            Assert.True(file.CanSeek);
+            Assert.Equal(0, file.Position);
+            Assert.Equal("zip content", await new StreamReader(file, leaveOpen: true).ReadToEndAsync());
+            Assert.True(File.Exists(file.Name));
+            await file.DisposeAsync();
+            Assert.False(File.Exists(file.Name));
+        }
+    }
+
+    [Fact]
     public async Task TheClientReportsAnUnknownPackageOrVersionAsNull()
     {
         var (feed, _) = Client(new() { [Index] = IndexResponse });
