@@ -56,41 +56,6 @@ public static class NuGetDependencyParser
         return results;
     }
 
-    /// <summary>
-    /// Returns the .NET target frameworks declared in a project or MSBuild file: the monikers of
-    /// TargetFramework and TargetFrameworks (split on ';'), and TargetFrameworkVersion of legacy projects
-    /// (v4.7.2 becomes net472). Values built from MSBuild properties are skipped; conditions are not evaluated.
-    /// </summary>
-    public static IReadOnlyList<string> ParseFrameworks(string path, string xml)
-    {
-        if (path.EndsWith("packages.config", StringComparison.OrdinalIgnoreCase)) return [];
-
-        var frameworks = new List<string>();
-        foreach (var element in XDocument.Parse(xml).Descendants())
-        {
-            var name = element.Name.LocalName;
-            if (name is not ("TargetFramework" or "TargetFrameworks" or "TargetFrameworkVersion")) continue;
-
-            var values = name == "TargetFrameworkVersion"
-                ? new[] { LegacyMoniker(element.Value) }
-                : element.Value.Split(';');
-            foreach (var value in values.Select(x => x?.Trim()))
-            {
-                if (string.IsNullOrEmpty(value) || value.Contains("$(", StringComparison.Ordinal)) continue;
-                if (!frameworks.Contains(value, StringComparer.OrdinalIgnoreCase)) frameworks.Add(value);
-            }
-        }
-        return frameworks;
-    }
-
-    private static string? LegacyMoniker(string version)
-    {
-        var trimmed = version.Trim();
-        if (trimmed.Length < 2 || !trimmed.StartsWith('v') || trimmed.Contains("$(", StringComparison.Ordinal))
-            return null;
-        return "net" + trimmed[1..].Replace(".", "");
-    }
-
     public static string? ResolveCentralVersion(
         string projectFile,
         string package,
