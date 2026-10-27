@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using NuGet.Versioning;
 
 namespace DependencyInventory;
 
@@ -95,9 +96,20 @@ public sealed class AzureArtifactsFeed : IPackageFeed
 
     public async Task<IReadOnlyList<PackagePublication>> GetPublicationsAsync(string id, CancellationToken ct)
     {
+        // With includeAllVersions, the feed API returns only release (isRelease defaults to true) and listed
+        // versions. Every combination of the two filters is requested and merged, whatever their exact meaning.
+        var publications = new List<PackagePublication>();
+        foreach (var filters in new[] { "", "&isListed=false", "&isRelease=false", "&isRelease=false&isListed=false" })
+            publications.AddRange(await GetPublicationsAsync(id, filters, ct));
+        return publications.DistinctBy(p => p.Version.ToLowerInvariant()).ToArray();
+    }
+
+    private async Task<IReadOnlyList<PackagePublication>> GetPublicationsAsync(string id, string filters,
+        CancellationToken ct)
+    {
         // packageNameQuery matches names containing the id: the package itself is the one named exactly so.
         using var document = await ReadJsonAsync($"{_feed.PackagesApiUrl}?protocolType=NuGet" +
-            $"&packageNameQuery={Uri.EscapeDataString(id)}&includeAllVersions=true&api-version=7.1", ct);
+            $"&packageNameQuery={Uri.EscapeDataString(id)}&includeAllVersions=true{filters}&api-version=7.1", ct);
         var package = document?.RootElement.GetProperty("value").EnumerateArray()
             .FirstOrDefault(p => p.TryGetProperty("name", out var name) &&
                 string.Equals(name.GetString(), id, StringComparison.OrdinalIgnoreCase));
@@ -131,14 +143,14 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     public async Task<string?> GetNuspecAsync(string id, string version, CancellationToken ct)
     {
         using var response = await SendAsync(
-            $"{await PackageBaseAsync(ct)}{Lower(id)}/{Lower(version)}/{Lower(id)}.nuspec", ct);
+            $"{await PackageBaseAsync(ct)}{Lower(id)}/{Normalized(version)}/{Lower(id)}.nuspec", ct);
         return response is null ? null : await response.Content.ReadAsStringAsync(ct);
     }
 
     public async Task<Stream?> GetPackageAsync(string id, string version, CancellationToken ct)
     {
         using var response = await SendAsync(
-            $"{await PackageBaseAsync(ct)}{Lower(id)}/{Lower(version)}/{Lower(id)}.{Lower(version)}.nupkg", ct);
+            $"{await PackageBaseAsync(ct)}{Lower(id)}/{Normalized(version)}/{Lower(id)}.{Normalized(version)}.nupkg", ct);
         if (response is null) return null;
         var buffer = new MemoryStream();
         await response.Content.CopyToAsync(buffer, ct);
@@ -167,6 +179,10 @@ public sealed class AzureArtifactsFeed : IPackageFeed
 
     // The NuGet package content API expects lowercase ids and versions.
     private static string Lower(string value) => Uri.EscapeDataString(value.ToLowerInvariant());
+
+    // ...and normalized versions: 2.0 is 2.0.0, 1.0.0.0 is 1.0.0, build metadata is dropped.
+    private static string Normalized(string version) =>
+        Lower(NuGetVersion.TryParse(version, out var parsed) ? parsed.ToNormalizedString() : version);
 
     private async Task<JsonDocument?> ReadJsonAsync(string url, CancellationToken ct)
     {
