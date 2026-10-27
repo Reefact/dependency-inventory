@@ -37,8 +37,14 @@ class FrameworkStatusTests(unittest.TestCase):
         self.assertEqual(status("net462"), ("ending", "end of support on January 12, 2027", dt.date(2027, 1, 12)))
         self.assertEqual(status("net461")[0], "unsupported")
 
-    def test_netstandard_has_no_end_of_support(self):
-        self.assertEqual(status("netstandard2.0")[0], "supported")
+    def test_netstandard_has_no_end_of_support_but_does_not_claim_to_run_everywhere(self):
+        # .NET Framework implements .NET Standard 2.0 only: netstandard2.1 does not run on it.
+        for framework in ("netstandard2.0", "netstandard2.1"):
+            with self.subTest(framework):
+                state, note, end = status(framework)
+                self.assertEqual((state, end), ("supported", None))
+                self.assertIn("support this .NET Standard version", note)
+                self.assertNotIn("every", note)
 
     def test_an_unrecognized_framework_is_not_reported_as_missing_from_the_feed(self):
         for framework in ("uap10.0", "monoandroid", "net99.0"):
