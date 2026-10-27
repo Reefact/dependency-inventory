@@ -158,6 +158,22 @@ public sealed class FrameworkTests
         Assert.Equal(3, result.Coverage.Projects);
     }
 
+    [Fact]
+    public async Task PathsDifferingOnlyByCaseAreTwoProjects()
+    {
+        var api = new FakeRepositoryProvider().AddRepository("cased", files: new Dictionary<string, string>
+        {
+            ["/src/App/App.csproj"] = Properties("<TargetFramework>net8.0</TargetFramework>"),
+            ["/src/app/App.csproj"] = Properties("<TargetFramework>net48</TargetFramework>")
+        });
+
+        var result = await ScanAsync(api, "cased");
+
+        Assert.Equal(["/src/App/App.csproj net8.0", "/src/app/App.csproj net48"],
+            result.Frameworks.Select(x => $"{x.ProjectFile} {x.Framework}").Order(StringComparer.Ordinal));
+        Assert.Equal(2, result.Coverage.Projects);
+    }
+
     [Theory]
     [InlineData("broken", CoverageStatus.Partial)]
     [InlineData("scripts", CoverageStatus.NoProjectFiles)]

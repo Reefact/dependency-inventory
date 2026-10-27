@@ -73,8 +73,9 @@ public static class FrameworkScanner
                     frameworks);
 
             // Unreadable files are kept as null, so that a project never falls back to a farther
-            // Directory.Build.props than the one MSBuild would import.
-            var files = new Dictionary<string, DeclaredFrameworks?>(StringComparer.OrdinalIgnoreCase);
+            // Directory.Build.props than the one MSBuild would import. Git paths are case-sensitive:
+            // two paths differing only by case are two projects.
+            var files = new Dictionary<string, DeclaredFrameworks?>(StringComparer.Ordinal);
             foreach (var file in read.Files)
             {
                 diagnostic?.Files.Add(new FrameworkFileDiagnostic(file.Path, file.ContentLength, file.Parsed,
