@@ -102,6 +102,20 @@ public sealed class FrameworkTests
     }
 
     [Fact]
+    public void ResolveOnlyInheritsFromFoldersOfTheSameCase()
+    {
+        var files = new Dictionary<string, DeclaredFrameworks?>
+        {
+            ["/Directory.Build.props"] = Net10,
+            ["/src/App/Directory.Build.props"] = Net8,
+            ["/src/app/Api.csproj"] = DeclaredFrameworks.None
+        };
+
+        Assert.Equal([new ResolvedFramework("net10.0", FrameworkSource.DirectoryBuildProps)],
+            FrameworkParser.Resolve("/src/app/Api.csproj", files));
+    }
+
+    [Fact]
     public void ResolveDoesNotLetAnUnreadableProjectInheritItsFramework()
     {
         var files = new Dictionary<string, DeclaredFrameworks?>
