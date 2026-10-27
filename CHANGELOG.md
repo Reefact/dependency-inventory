@@ -23,6 +23,13 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   `report.json` in the `framework-report` folder. Projects whose framework cannot be resolved are listed as
   `Unresolved`.
 
+### Fixed
+
+- **`depinv packages` respects the case of Git paths.** Two project files whose paths differ only by case, such as
+  `/src/App/App.csproj` and `/src/app/App.csproj`, are now both reported; one of them used to be dropped. A project
+  no longer takes a central version from a `Directory.Packages.props` in a folder that differs from its own only by
+  case.
+
 ## [1.0.0-preview.3] - 2026-10-26
 
 ### Changed

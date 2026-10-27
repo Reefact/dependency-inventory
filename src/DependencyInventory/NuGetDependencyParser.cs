@@ -66,11 +66,12 @@ public static class NuGetDependencyParser
         IReadOnlyDictionary<string, IReadOnlyList<ParsedPackage>> files)
     {
         // Only the nearest Directory.Packages.props is automatically imported by NuGet.
+        // Git folders are case-sensitive: /src/App/ is not a parent of /src/app/Api.csproj.
         var projectDirectory = projectFile[..(projectFile.LastIndexOf('/') + 1)];
         var centralFiles = files
             .Where(f => f.Key.EndsWith("/Directory.Packages.props", StringComparison.OrdinalIgnoreCase))
             .Where(f => projectDirectory.StartsWith(
-                f.Key[..(f.Key.LastIndexOf('/') + 1)], StringComparison.OrdinalIgnoreCase))
+                f.Key[..(f.Key.LastIndexOf('/') + 1)], StringComparison.Ordinal))
             .OrderByDescending(f => f.Key.Length);
 
         var closest = centralFiles.FirstOrDefault();
