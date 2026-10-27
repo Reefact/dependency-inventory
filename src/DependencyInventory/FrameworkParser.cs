@@ -69,11 +69,12 @@ public static class FrameworkParser
             return [new ResolvedFramework(null, FrameworkSource.Unresolved)];
         if (own is { DeclaresNothing: false }) return Entries(own, FrameworkSource.Project);
 
+        // Git folders are case-sensitive: /src/App/ is not a parent of /src/app/Api.csproj.
         var projectDirectory = projectFile[..(projectFile.LastIndexOf('/') + 1)];
         var nearest = files
             .Where(f => f.Key.EndsWith(BuildProps, StringComparison.OrdinalIgnoreCase))
             .Where(f => projectDirectory.StartsWith(
-                f.Key[..(f.Key.LastIndexOf('/') + 1)], StringComparison.OrdinalIgnoreCase))
+                f.Key[..(f.Key.LastIndexOf('/') + 1)], StringComparison.Ordinal))
             .OrderByDescending(f => f.Key.Length)
             .Select(f => f.Value)
             .FirstOrDefault();

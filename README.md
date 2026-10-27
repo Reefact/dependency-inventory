@@ -29,8 +29,8 @@ the tool only sends GET requests.
 There is no implicit filter: one or more `--pattern` or `--regex` options are required. `depinv pkg` is a shorter
 alias of `depinv packages`.
 
-The same walk also answers another question, which .NET framework each project targets, with
-`depinv frameworks` (see [Target frameworks](#-target-frameworks)).
+To inventory the target frameworks of every .NET project, use `depinv frameworks` (see
+[Target frameworks](#-target-frameworks)).
 
 ## 📦 Install
 
