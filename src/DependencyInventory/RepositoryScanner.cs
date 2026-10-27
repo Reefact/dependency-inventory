@@ -71,7 +71,80 @@ public sealed record ScanParallelism
     }
 }
 
-/// <summary>Scans repositories through a provider; no console access, so it can be tested directly.</summary>
+/// <summary>One file of the selected commit: its parsed content, or the error that prevented reading it.</summary>
+internal sealed record FileRead<T>(string Path, int? ContentLength, T? Parsed, string? Error);
+
+/// <summary>What could be read in one repository; no branch means the repository has none.</summary>
+internal sealed record RepositoryRead<T>(GitBranch? Branch, IReadOnlyList<FileRead<T>> Files);
+
+/// <summary>
+/// The walk shared by every inventory: selected branch, tree of its commit, files read (possibly in parallel)
+/// and returned in path order. No console access, so it can be tested directly.
+/// </summary>
+internal static class RepositoryWalker
+{
+    /// <summary>
+    /// Runs <paramref name="scan"/> on every repository; the results keep the given order whatever the parallelism.
+    /// The progress is notified concurrently in <see cref="ParallelismMode.Repositories"/> mode.
+    /// </summary>
+    public static async Task<TResult[]> ForEachAsync<TResult>(IReadOnlyList<Repository> repositories,
+        ScanParallelism parallelism, IScanProgress? progress,
+        Func<Repository, int, CancellationToken, Task<TResult>> scan, CancellationToken ct)
+    {
+        var results = new TResult[repositories.Count];
+        await Parallel.ForEachAsync(Enumerable.Range(0, repositories.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = parallelism.RepositoryDegree, CancellationToken = ct },
+            async (index, token) =>
+            {
+                var repo = repositories[index];
+                progress?.RepositoryStarted(repo);
+                results[index] = await scan(repo, parallelism.FileDegree, token);
+                progress?.RepositoryCompleted(repo);
+            });
+        return results;
+    }
+
+    /// <summary>
+    /// Reads and parses the files of the selected branch that <paramref name="isInteresting"/> keeps. A file that
+    /// cannot be read or parsed is returned with its error; a branch or tree failure is thrown.
+    /// <paramref name="branchesListed"/> is called as soon as the branch is selected, before the tree is read.
+    /// </summary>
+    public static async Task<RepositoryRead<T>> ReadAsync<T>(IRepositoryProvider api, Repository repo,
+        Func<string, bool> isInteresting, Func<string, string, T> parse,
+        Action<IReadOnlyList<GitBranch>, GitBranch?> branchesListed, int fileParallelism, CancellationToken ct)
+    {
+        var branches = await api.GetBranchesAsync(repo.Id, ct);
+        var branch = BranchSelector.Select(branches);
+        branchesListed(branches, branch);
+        if (branch is null) return new(null, []);
+
+        var tree = await api.GetTreeAsync(repo.Id, branch.ObjectId, ct);
+        var paths = tree.Where(x => !x.IsFolder && isInteresting(x.Path))
+            .Select(x => x.Path).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+
+        // Every file comes from this single commit.
+        var reads = new FileRead<T>[paths.Length];
+        await Parallel.ForEachAsync(Enumerable.Range(0, paths.Length),
+            new ParallelOptions { MaxDegreeOfParallelism = fileParallelism, CancellationToken = ct },
+            async (index, token) =>
+            {
+                var path = paths[index];
+                try
+                {
+                    var content = await api.GetFileAsync(repo.Id, branch.ObjectId, path, token);
+                    reads[index] = new FileRead<T>(path, content.Length, parse(path, content), null);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    reads[index] = new FileRead<T>(path, null, default, ex.Message);
+                }
+            });
+        return new(branch, reads);
+    }
+}
+
+/// <summary>Scans repositories for NuGet packages; no console access, so it can be tested directly.</summary>
 public static class RepositoryScanner
 {
     /// <summary>All repositories, or only the one named (case-insensitive), ordered by name.</summary>
@@ -89,20 +162,15 @@ public static class RepositoryScanner
         IReadOnlyList<Repository> repositories, DependencyMatcher matcher, bool collectDiagnostics,
         ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct)
     {
-        var results = new (RepositoryScanResult Scan, RepositoryDiagnostic? Diagnostic)[repositories.Count];
-        await Parallel.ForEachAsync(Enumerable.Range(0, repositories.Count),
-            new ParallelOptions { MaxDegreeOfParallelism = parallelism.RepositoryDegree, CancellationToken = ct },
-            async (index, token) =>
+        var results = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
+            async (repo, fileDegree, token) =>
             {
-                var repo = repositories[index];
-                progress?.RepositoryStarted(repo);
                 var diagnostic = collectDiagnostics
                     ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
                     : null;
-                var scan = await ScanRepositoryAsync(api, repo, matcher, diagnostic, token, parallelism.FileDegree);
-                results[index] = (scan, diagnostic);
-                progress?.RepositoryCompleted(repo);
-            });
+                var scan = await ScanRepositoryAsync(api, repo, matcher, diagnostic, token, fileDegree);
+                return (Scan: scan, Diagnostic: diagnostic);
+            }, ct);
 
         return new ScanResult(
             results.SelectMany(x => x.Scan.Occurrences).ToArray(),
@@ -127,54 +195,30 @@ public static class RepositoryScanner
         var failures = new List<string>();
         try
         {
-            var branches = await api.GetBranchesAsync(repo.Id, ct);
-            if (diagnostic is not null)
-                diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
-            var branch = BranchSelector.Select(branches);
-            if (branch is null)
-                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"), hits);
-            branchName = branch.Name;
-            if (diagnostic is not null)
-            {
-                diagnostic.SelectedBranch = branch.Name;
-                diagnostic.Commit = branch.ObjectId;
-            }
-            var tree = await api.GetTreeAsync(repo.Id, branch.ObjectId, ct);
-            var paths = tree.Where(x => !x.IsFolder && NuGetDependencyParser.IsInterestingFile(x.Path))
-                .Select(x => x.Path).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-
-            // Every reference comes from this single commit.
-            // Files may be read in parallel; their results are then taken in path order.
-            var reads = new FileDiagnostic[paths.Length];
-            await Parallel.ForEachAsync(Enumerable.Range(0, paths.Length),
-                new ParallelOptions { MaxDegreeOfParallelism = fileParallelism, CancellationToken = ct },
-                async (index, token) =>
+            var read = await RepositoryWalker.ReadAsync(api, repo, NuGetDependencyParser.IsInterestingFile,
+                NuGetDependencyParser.Parse,
+                (branches, selected) =>
                 {
-                    var path = paths[index];
-                    try
-                    {
-                        var content = await api.GetFileAsync(repo.Id, branch.ObjectId, path, token);
-                        reads[index] = new FileDiagnostic(path, content.Length,
-                            NuGetDependencyParser.Parse(path, content), null);
-                    }
-                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-                    catch (Exception ex)
-                    {
-                        reads[index] = new FileDiagnostic(path, null, [], ex.Message);
-                    }
-                });
+                    branchName = selected?.Name;
+                    if (diagnostic is null) return;
+                    diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
+                    diagnostic.SelectedBranch = selected?.Name;
+                    diagnostic.Commit = selected?.ObjectId;
+                }, fileParallelism, ct);
+            if (read.Branch is not { } branch)
+                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"), hits);
 
             var parsedFiles = new Dictionary<string, IReadOnlyList<ParsedPackage>>(
                 StringComparer.OrdinalIgnoreCase);
-            foreach (var read in reads)
+            foreach (var file in read.Files)
             {
-                diagnostic?.Files.Add(read);
-                if (read.Error is null)
+                diagnostic?.Files.Add(new FileDiagnostic(file.Path, file.ContentLength, file.Parsed ?? [], file.Error));
+                if (file.Error is null)
                 {
-                    parsedFiles[read.Path] = read.Packages;
+                    parsedFiles[file.Path] = file.Parsed!;
                     filesRead++;
                 }
-                else failures.Add($"{read.Path}: {read.Error}");
+                else failures.Add($"{file.Path}: {file.Error}");
             }
 
             foreach (var file in parsedFiles)
@@ -196,7 +240,7 @@ public static class RepositoryScanner
                     matchedFilters, api.FileUrl(repo, branch.ObjectId, file.Key)));
             }
             var status = failures.Count > 0 ? CoverageStatus.Partial
-                : paths.Length == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
+                : read.Files.Count == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
             return new(new(repo.Project, repo.Name, branchName, status,
                 filesRead, hits.Count(x => x.Kind == PackageKind.Reference),
                 failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits);

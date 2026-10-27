@@ -29,6 +29,9 @@ the tool only sends GET requests.
 There is no implicit filter: one or more `--pattern` or `--regex` options are required. `depinv pkg` is a shorter
 alias of `depinv packages`.
 
+The same walk also answers another question, which .NET framework each project targets, with
+`depinv frameworks` (see [Target frameworks](#-target-frameworks)).
+
 ## 📦 Install
 
 ~~~powershell
@@ -133,6 +136,31 @@ The dependency-report folder (configurable with --output) contains:
 
 CSV files are UTF-8 with BOM and semicolon-separated.
 
+## 🧱 Target frameworks
+
+`depinv frameworks` (alias `depinv fwk`) lists the target framework of every .NET project found, with no filter:
+
+~~~powershell
+depinv frameworks --provider azure --url "https://dev.azure.com/Organization/Project"
+~~~
+
+It takes the same options as `depinv packages` except the filters (`--pattern`, `--regex`, `--case-sensitive`).
+The framework-report folder (configurable with --output) contains:
+
+- frameworks.csv: one line per project file and target framework: ProjectFile, Framework, FrameworkSource, branch, commit;
+- repositories.csv: coverage of every repository found and its scan status, with the number of projects read;
+- report.json: full JSON report.
+
+Files: *.csproj, *.fsproj, *.vbproj and Directory.Build.props, outside the bin, obj, node_modules and .git folders.
+
+- TargetFrameworks gives one line per framework; the legacy TargetFrameworkVersion is written as a moniker
+  (v4.7.2 becomes net472).
+- A project that declares no framework inherits it from the nearest Directory.Build.props, the only one MSBuild
+  imports automatically; FrameworkSource is then DirectoryBuildProps instead of Project.
+- A framework that cannot be read literally, such as `$(DefaultTargetFramework)`, or a project whose framework is
+  found nowhere, gives a line with an empty Framework and FrameworkSource Unresolved: the project is still listed.
+- MSBuild conditions are not evaluated: every declared value is listed.
+
 ## 🔎 How it works
 
 ### Branch selection
@@ -174,7 +202,7 @@ The 120 s timeout applies to each attempt, including the time needed to read the
 depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --repository api-order-bo --diagnostics
 ~~~
 
-The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined.
+The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined. With `depinv frameworks`, it lists the frameworks declared by every file examined instead.
 
 ## 🤝 Contributing
 

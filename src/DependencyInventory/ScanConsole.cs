@@ -3,7 +3,7 @@ using Spectre.Console;
 
 namespace DependencyInventory;
 
-/// <summary>Console rendering of a scan: the only place, with the prompts of ScanCommand, that uses AnsiConsole.</summary>
+/// <summary>Console rendering of a scan: the only place, with the prompts of RepositoryCommand, that uses AnsiConsole.</summary>
 public static class ScanConsole
 {
     public static void Header()
@@ -73,6 +73,26 @@ public static class ScanConsole
             .AddRow("References found", references.Length.ToString())
             .AddRow("Distinct packages", references.Select(x => x.Package)
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString())
+            .AddRow("Failed or partial repositories", result.IncompleteRepositories.ToString());
+        AnsiConsole.Write(summary);
+        AnsiConsole.MarkupLine($"Reports: [green]{Markup.Escape(reportDirectory)}[/]");
+        if (result.IncompleteRepositories > 0)
+            AnsiConsole.MarkupLine("[yellow]Incomplete scan: see repositories.csv.[/]");
+    }
+
+    public static void FrameworkSummary(int analysed, FrameworkScanResult result, string reportDirectory)
+    {
+        var projects = result.Frameworks.Select(x => (x.Project, x.Repository, x.ProjectFile)).Distinct().Count();
+        var unresolved = result.Frameworks.Where(x => x.FrameworkSource == FrameworkSource.Unresolved)
+            .Select(x => (x.Project, x.Repository, x.ProjectFile)).Distinct().Count();
+
+        var summary = new Table().Border(TableBorder.Rounded)
+            .AddColumn("Measure").AddColumn("Value")
+            .AddRow("Repositories scanned", analysed.ToString())
+            .AddRow("Projects found", projects.ToString())
+            .AddRow("Distinct frameworks", result.Frameworks.Where(x => x.Framework is not null)
+                .Select(x => x.Framework).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString())
+            .AddRow("Projects with an unresolved framework", unresolved.ToString())
             .AddRow("Failed or partial repositories", result.IncompleteRepositories.ToString());
         AnsiConsole.Write(summary);
         AnsiConsole.MarkupLine($"Reports: [green]{Markup.Escape(reportDirectory)}[/]");

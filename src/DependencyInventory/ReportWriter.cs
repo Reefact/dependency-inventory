@@ -29,9 +29,29 @@ public static class ReportWriter
         return absolute;
     }
 
-    /// <summary>Writes diagnostics.json in a report directory returned by <see cref="SaveAsync"/>.</summary>
-    public static Task SaveDiagnosticsAsync(
-        IReadOnlyList<RepositoryDiagnostic> diagnostics, string directory, CancellationToken ct)
+    /// <summary>Writes the frameworks inventory: report.json, frameworks.csv and repositories.csv.</summary>
+    public static async Task<string> SaveFrameworksAsync(FrameworkReport report, string directory, CancellationToken ct)
+    {
+        var absolute = Path.GetFullPath(directory);
+        Directory.CreateDirectory(absolute);
+        var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(Path.Combine(absolute, "report.json"),
+            json, new UTF8Encoding(false), ct);
+
+        await WriteCsvAsync(Path.Combine(absolute, "frameworks.csv"),
+            ["Project", "Repository", "Branch", "Commit", "ProjectFile", "Framework", "FrameworkSource", "Url"],
+            report.Frameworks.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.ProjectFile,
+                x.Framework ?? "", x.FrameworkSource.ToString(), x.Url }), ct);
+        await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
+            ["Project", "Repository", "Branch", "Status", "FilesExamined", "Projects", "Details"],
+            report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
+                x.FilesExamined.ToString(), x.Projects.ToString(), x.Details ?? "" }), ct);
+        return absolute;
+    }
+
+    /// <summary>Writes diagnostics.json in a report directory returned by a Save method.</summary>
+    public static Task SaveDiagnosticsAsync<T>(
+        IReadOnlyList<T> diagnostics, string directory, CancellationToken ct)
     {
         var json = JsonSerializer.Serialize(diagnostics, new JsonSerializerOptions { WriteIndented = true });
         return File.WriteAllTextAsync(Path.Combine(directory, "diagnostics.json"), json, ct);

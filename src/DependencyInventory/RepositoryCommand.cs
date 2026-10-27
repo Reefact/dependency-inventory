@@ -4,7 +4,8 @@ using Spectre.Console.Cli;
 
 namespace DependencyInventory;
 
-public sealed class ScanSettings : CommandSettings
+/// <summary>Options shared by every inventory command: the origin, its credentials and how it is scanned.</summary>
+public abstract class RepositorySettings : CommandSettings
 {
     [CommandOption("--provider <SOURCE>", isRequired: true)]
     [Description("Source of the code: Azure or GitLab.")]
@@ -14,34 +15,17 @@ public sealed class ScanSettings : CommandSettings
     [Description("URL of the Azure DevOps project or the GitLab group.")]
     public string? Url { get; init; }
 
-    [CommandOption("-o|--output")]
-    [Description("Folder where the CSV and JSON reports are written.")]
-    [DefaultValue("dependency-report")]
-    public string Output { get; init; } = "dependency-report";
-
     [CommandOption("--credentials-file [PATH]")]
     [Description("Credentials read from a file; .azure-credentials or .gitlab-credentials by default. " +
         "Linux and macOS only: on Windows, use the login command.")]
     public required FlagValue<string?> CredentialsFile { get; init; }
 
-    [CommandOption("--pattern <GLOB>")]
-    [Description("NuGet package glob (repeatable; * and ?).")]
-    public string[] Patterns { get; init; } = [];
-
-    [CommandOption("--regex <EXPRESSION>")]
-    [Description(".NET regular expression (repeatable).")]
-    public string[] Regexes { get; init; } = [];
-
-    [CommandOption("--case-sensitive")]
-    [Description("Make the filters case-sensitive.")]
-    public bool CaseSensitive { get; init; }
-
     [CommandOption("--repository")]
-    [Description("Scan a single repository (useful to diagnose missing references).")]
+    [Description("Scan a single repository (useful to diagnose a missing result).")]
     public string? Repository { get; init; }
 
     [CommandOption("--diagnostics")]
-    [Description("Export the branches and every NuGet reference per file to diagnostics.json.")]
+    [Description("Export the branches and what was read in every file to diagnostics.json.")]
     public bool Diagnostics { get; init; }
 
     [CommandOption("--parallelism <N>")]
@@ -54,10 +38,21 @@ public sealed class ScanSettings : CommandSettings
     public ParallelismMode? ParallelismMode { get; init; }
 }
 
-public sealed class ScanCommand : AsyncCommand<ScanSettings>
+/// <summary>
+/// Validates the shared options, resolves the credentials and selects the repositories, then lets the
+/// inventory scan them. Exit codes: 0 complete, 1 incomplete or failed, 2 invalid input, 130 interrupted.
+/// </summary>
+public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> where TSettings : RepositorySettings
 {
+    /// <summary>Validates the inventory's own options, before any prompt for credentials; false stops with 2.</summary>
+    protected virtual bool Prepare(TSettings settings) => true;
+
+    /// <summary>Scans the selected repositories, writes the reports and returns the exit code.</summary>
+    protected abstract Task<int> InventoryAsync(IRepositoryProvider api, IReadOnlyList<Repository> repositories,
+        ScanParallelism parallelism, TSettings settings, CancellationToken cancellationToken);
+
     public override async Task<int> ExecuteAsync(
-        CommandContext context, ScanSettings settings, CancellationToken cancellationToken)
+        CommandContext context, TSettings settings, CancellationToken cancellationToken)
     {
         ScanConsole.Header();
 
@@ -69,18 +64,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             return 2;
         }
 
-        DependencyMatcher matcher;
-        try
-        {
-            matcher = DependencyMatcher.Create(settings.Patterns, settings.Regexes, settings.CaseSensitive);
-        }
-        catch (ArgumentException ex)
-        {
-            ScanConsole.Error($"Invalid filter: {ex.Message}");
-            return 2;
-        }
-
-        ScanConsole.Filters(matcher);
+        if (!Prepare(settings)) return 2;
 
         ScanParallelism parallelism;
         try { parallelism = ScanParallelism.Create(settings.Parallelism, settings.ParallelismMode); }
@@ -137,20 +121,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
             }
 
             ScanConsole.Source(api.Origin, repositories.Count, selectedRepositories.Count);
-            var result = await ScanConsole.WithProgressAsync(selectedRepositories.Count, progress =>
-                RepositoryScanner.ScanAsync(api, selectedRepositories, matcher, settings.Diagnostics,
-                    parallelism, progress, cancellationToken));
-
-            var report = new ScanReport(DateTimeOffset.UtcNow, api.Origin, matcher.Filters,
-                result.Occurrences, result.Coverage);
-            var paths = await ReportWriter.SaveAsync(report, settings.Output, cancellationToken);
-            if (settings.Diagnostics)
-            {
-                await ReportWriter.SaveDiagnosticsAsync(result.Diagnostics, paths, cancellationToken);
-                ScanConsole.DiagnosticsWritten();
-            }
-            ScanConsole.Summary(selectedRepositories.Count, result, paths);
-            return result.IncompleteRepositories > 0 ? 1 : 0;
+            return await InventoryAsync(api, selectedRepositories, parallelism, settings, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

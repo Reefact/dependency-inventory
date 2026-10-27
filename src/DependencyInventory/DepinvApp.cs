@@ -12,9 +12,12 @@ public static class DepinvApp
         {
             config.SetApplicationName("depinv");
             config.SetApplicationVersion(AppVersion.Current);
-            config.AddCommand<ScanCommand>("packages")
+            config.AddCommand<PackagesCommand>("packages")
                 .WithAlias("pkg")
                 .WithDescription("Find the NuGet packages matching --pattern or --regex in every repository.");
+            config.AddCommand<FrameworksCommand>("frameworks")
+                .WithAlias("fwk")
+                .WithDescription("List the target frameworks of every .NET project in every repository.");
             config.AddCommand<LoginCommand>("login")
                 .WithDescription("Store the credentials of an origin in the system vault (Windows only for now).");
             config.AddCommand<LogoutCommand>("logout")

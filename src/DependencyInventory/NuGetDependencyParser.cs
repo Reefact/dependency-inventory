@@ -10,11 +10,15 @@ public static class NuGetDependencyParser
     public static bool IsProjectFile(string path) =>
         ProjectExtensions.Any(x => path.EndsWith(x, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Build output and tooling folders, never scanned. Expects '/' separators.</summary>
+    internal static bool IsInExcludedFolder(string path) =>
+        new[] { "/bin/", "/obj/", "/node_modules/", "/.git/" }
+            .Any(x => path.Contains(x, StringComparison.OrdinalIgnoreCase));
+
     public static bool IsInterestingFile(string path)
     {
         var normalized = path.Replace('\\', '/');
-        if (new[] { "/bin/", "/obj/", "/node_modules/", "/.git/" }
-            .Any(x => normalized.Contains(x, StringComparison.OrdinalIgnoreCase))) return false;
+        if (IsInExcludedFolder(normalized)) return false;
 
         return IsProjectFile(normalized) ||
             normalized.EndsWith(".props", StringComparison.OrdinalIgnoreCase) ||

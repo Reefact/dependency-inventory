@@ -8,7 +8,9 @@ public sealed class DepinvAppTests
     [Theory]
     [InlineData("packages")]
     [InlineData("pkg")]
-    public async Task ThePackageScanRunsUnderItsCommandAndAlias(string command)
+    [InlineData("frameworks")]
+    [InlineData("fwk")]
+    public async Task EveryInventoryRunsUnderItsCommandAndAlias(string command)
     {
         var exitCode = await DepinvApp.Create().RunAsync(
             [command, "--provider", "azure", "--url", "https://example.com/not-azure"]);
