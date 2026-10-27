@@ -48,6 +48,9 @@ public sealed record FeedScanResult(
 {
     public int Failed => Packages.Count(x => x.Status == PackageStatus.Failed);
     public int NotFound => Packages.Count(x => x.Status == PackageStatus.NotFound);
+
+    /// <summary>1 when a package or a version could not be found or read: the inventory is incomplete.</summary>
+    public int ExitCode => Failed + NotFound > 0 ? 1 : 0;
 }
 
 /// <summary>Reads published package versions from a feed; no console access, so it can be tested directly.</summary>

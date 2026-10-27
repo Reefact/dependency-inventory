@@ -59,7 +59,8 @@ public sealed class FeedSettings : OriginSettings
 
 /// <summary>
 /// depinv feed: the frameworks and dependencies of published package versions, read from an Azure Artifacts feed.
-/// Exit codes: 0 complete, 1 a version could not be read or the feed failed, 2 invalid input, 130 interrupted.
+/// Exit codes: 0 complete, 1 a package or version not found or not read, or the feed failed, 2 invalid input,
+/// 130 interrupted.
 /// </summary>
 public sealed class FeedCommand : AsyncCommand<FeedSettings>
 {
@@ -147,7 +148,7 @@ public sealed class FeedCommand : AsyncCommand<FeedSettings>
                 ScanConsole.DiagnosticsWritten();
             }
             ScanConsole.FeedSummary(result, paths);
-            return result.Failed > 0 ? 1 : 0;
+            return result.ExitCode;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
