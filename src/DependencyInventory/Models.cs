@@ -95,3 +95,36 @@ public sealed record FrameworkReport(
     string Origin,
     IReadOnlyList<FrameworkOccurrence> Frameworks,
     IReadOnlyList<ProjectCoverage> Coverage);
+
+[JsonConverter(typeof(JsonStringEnumConverter<DependencyKind>))]
+public enum DependencyKind { Package, FrameworkReference }
+
+[JsonConverter(typeof(JsonStringEnumConverter<PackageStatus>))]
+public enum PackageStatus { OK, NotFound, Failed }
+
+/// <summary>One target framework shipped by one published package version.</summary>
+public sealed record PackageFramework(string Package, string Version, string Framework);
+
+/// <summary>
+/// One dependency of a published package version, for one framework; an empty framework applies to all.
+/// A FrameworkReference has no version range: its version is the framework's.
+/// </summary>
+public sealed record PackageDependency(
+    string Package,
+    string Version,
+    string Framework,
+    string Dependency,
+    string? VersionRange,
+    DependencyKind Kind);
+
+/// <summary>Whether a package version could be read; no version when the package itself is unknown.</summary>
+public sealed record PackageCoverage(string Package, string Version, PackageStatus Status, string? Details);
+
+public sealed record FeedReport(
+    DateTimeOffset ScannedAt,
+    string Feed,
+    IReadOnlyList<DependencyFilter> PackageFilters,
+    IReadOnlyList<DependencyFilter> DependencyFilters,
+    IReadOnlyList<PackageFramework> Frameworks,
+    IReadOnlyList<PackageDependency> Dependencies,
+    IReadOnlyList<PackageCoverage> Packages);

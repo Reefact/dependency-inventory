@@ -20,6 +20,8 @@ public static class DepinvApp
             config.AddCommand<FrameworksCommand>("frameworks")
                 .WithAlias("fwk")
                 .WithDescription("List the target frameworks of every .NET project in every repository.");
+            config.AddCommand<FeedCommand>("feed")
+                .WithDescription("Read the frameworks and dependencies of published package versions from a feed.");
             config.AddCommand<LoginCommand>("login")
                 .WithDescription("Store the credentials of an origin in the system vault (Windows only for now).");
             config.AddCommand<LogoutCommand>("logout")

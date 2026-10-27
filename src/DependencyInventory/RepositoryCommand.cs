@@ -4,8 +4,8 @@ using Spectre.Console.Cli;
 
 namespace DependencyInventory;
 
-/// <summary>Options shared by every inventory command: the origin, its credentials and how it is scanned.</summary>
-public abstract class RepositorySettings : CommandSettings
+/// <summary>Options shared by every command that reads an origin: the origin and its credentials.</summary>
+public abstract class OriginSettings : CommandSettings
 {
     [CommandOption("--provider <SOURCE>", isRequired: true)]
     [Description("Source of the code: Azure or GitLab.")]
@@ -19,7 +19,11 @@ public abstract class RepositorySettings : CommandSettings
     [Description("Credentials read from a file; .azure-credentials or .gitlab-credentials by default. " +
         "Linux and macOS only: on Windows, use the login command.")]
     public required FlagValue<string?> CredentialsFile { get; init; }
+}
 
+/// <summary>Options shared by every repository inventory: the origin and how its repositories are scanned.</summary>
+public abstract class RepositorySettings : OriginSettings
+{
     [CommandOption("--repository")]
     [Description("Scan a single repository (useful to diagnose a missing result).")]
     public string? Repository { get; init; }
@@ -74,39 +78,8 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
             return 2;
         }
 
-        // Secrets are never logged; Azure uses login and PAT, GitLab the PAT alone.
-        RepositoryCredentials credentials;
-        var store = CredentialStores.ForCurrentPlatform();
-        try
-        {
-            var resolved = await CredentialResolver.ResolveAsync(settings.Provider, url,
-                settings.CredentialsFile.IsSet, settings.CredentialsFile.Value,
-                store, () => CredentialPrompt.Ask(settings.Provider), cancellationToken);
-            if (resolved.Credentials is null)
-            {
-                ScanConsole.Error("Credentials are required.");
-                return 2;
-            }
-            if (resolved.Source == CredentialSource.Store)
-                ScanConsole.CredentialsFromStore(store!.Name);
-            credentials = resolved.Credentials;
-        }
-        catch (NotSupportedException ex)
-        {
-            ScanConsole.Error(ex.Message);
-            return 2;
-        }
-        catch (OperationCanceledException)
-        {
-            ScanConsole.Warning("Reading interrupted.");
-            return 130;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
-            FormatException or ArgumentException or System.ComponentModel.Win32Exception)
-        {
-            ScanConsole.Error($"Cannot read the credentials: {ex.Message}");
-            return 2;
-        }
+        var (credentials, exitCode) = await OriginCredentials.ResolveAsync(settings, url, cancellationToken);
+        if (credentials is null) return exitCode;
 
         try
         {
@@ -137,6 +110,48 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
         {
             ScanConsole.Error($"Failed: {ex.Message}");
             return 1;
+        }
+    }
+}
+
+/// <summary>Resolves the credentials of an origin for a command, reporting failures on the console.</summary>
+internal static class OriginCredentials
+{
+    /// <summary>The credentials, or none and the exit code to stop with: 2 invalid input, 130 interrupted.</summary>
+    public static async Task<(RepositoryCredentials? Credentials, int ExitCode)> ResolveAsync(
+        OriginSettings settings, string url, CancellationToken cancellationToken)
+    {
+        // Secrets are never logged; Azure uses login and PAT, GitLab the PAT alone.
+        var store = CredentialStores.ForCurrentPlatform();
+        try
+        {
+            var resolved = await CredentialResolver.ResolveAsync(settings.Provider, url,
+                settings.CredentialsFile.IsSet, settings.CredentialsFile.Value,
+                store, () => CredentialPrompt.Ask(settings.Provider), cancellationToken);
+            if (resolved.Credentials is null)
+            {
+                ScanConsole.Error("Credentials are required.");
+                return (null, 2);
+            }
+            if (resolved.Source == CredentialSource.Store)
+                ScanConsole.CredentialsFromStore(store!.Name);
+            return (resolved.Credentials, 0);
+        }
+        catch (NotSupportedException ex)
+        {
+            ScanConsole.Error(ex.Message);
+            return (null, 2);
+        }
+        catch (OperationCanceledException)
+        {
+            ScanConsole.Warning("Reading interrupted.");
+            return (null, 130);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+            FormatException or ArgumentException or System.ComponentModel.Win32Exception)
+        {
+            ScanConsole.Error($"Cannot read the credentials: {ex.Message}");
+            return (null, 2);
         }
     }
 }
