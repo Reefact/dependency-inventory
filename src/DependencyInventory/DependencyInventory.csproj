@@ -17,7 +17,7 @@
 
     <Authors>Sylvain AURAT</Authors>
     <Copyright>© Sylvain Aurat 2026</Copyright>
-    <Description>depinv inventories the NuGet references and the .NET target frameworks declared in the Git repositories of an Azure DevOps project or a GitLab group, and writes CSV and JSON reports.</Description>
+    <Description>depinv inventories the NuGet references and the .NET target frameworks declared in the Git repositories of an Azure DevOps project or a GitLab group, reads the frameworks and dependencies of the package versions published in an Azure Artifacts feed, and writes CSV and JSON reports.</Description>
     <PackageTags>nuget;dependencies;inventory;azure-devops;gitlab;dotnet-tool;cli</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -39,6 +39,8 @@
     <None Include="..\..\icon.png" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="NuGet.Frameworks" Version="7.9.0" />
+    <PackageReference Include="NuGet.Versioning" Version="7.9.0" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.57.2" />
   </ItemGroup>
 </Project>

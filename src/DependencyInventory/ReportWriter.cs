@@ -49,6 +49,30 @@ public static class ReportWriter
         return absolute;
     }
 
+    /// <summary>
+    /// Writes the feed inventory: report.json, package-frameworks.csv, package-dependencies.csv and packages.csv.
+    /// </summary>
+    public static async Task<string> SaveFeedAsync(FeedReport report, string directory, CancellationToken ct)
+    {
+        var absolute = Path.GetFullPath(directory);
+        Directory.CreateDirectory(absolute);
+        var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(Path.Combine(absolute, "report.json"),
+            json, new UTF8Encoding(false), ct);
+
+        await WriteCsvAsync(Path.Combine(absolute, "package-frameworks.csv"),
+            ["Package", "Version", "Framework"],
+            report.Frameworks.Select(x => new[] { x.Package, x.Version, x.Framework }), ct);
+        await WriteCsvAsync(Path.Combine(absolute, "package-dependencies.csv"),
+            ["Package", "Version", "Framework", "Dependency", "VersionRange", "Kind"],
+            report.Dependencies.Select(x => new[] { x.Package, x.Version, x.Framework, x.Dependency,
+                x.VersionRange ?? "", x.Kind.ToString() }), ct);
+        await WriteCsvAsync(Path.Combine(absolute, "packages.csv"),
+            ["Package", "Version", "Status", "Details"],
+            report.Packages.Select(x => new[] { x.Package, x.Version, x.Status.ToString(), x.Details ?? "" }), ct);
+        return absolute;
+    }
+
     /// <summary>Writes diagnostics.json in a report directory returned by a Save method.</summary>
     public static Task SaveDiagnosticsAsync<T>(
         IReadOnlyList<T> diagnostics, string directory, CancellationToken ct)

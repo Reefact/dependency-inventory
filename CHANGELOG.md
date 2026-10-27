@@ -22,6 +22,12 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   falls back to the nearest `Directory.Build.props`, and writes `frameworks.csv`, `repositories.csv` and
   `report.json` in the `framework-report` folder. Projects whose framework cannot be resolved are listed as
   `Unresolved`.
+- **`depinv feed` reads published package versions from an Azure Artifacts feed**: the frameworks each version
+  ships and its dependencies, framework references included. The versions come from `--package ID[@VERSION]`,
+  from `--versions-from` (a `dependencies.csv`) or from `--pattern` / `--regex` on the feed's packages, with
+  `--latest` to keep the highest one. `--dependency-pattern` / `--dependency-regex` filter the dependencies. It writes
+  `package-frameworks.csv`, `package-dependencies.csv`, `packages.csv` and `report.json` in the `feed-report` folder.
+  The PAT needs the Packaging (Read) scope.
 
 ### Fixed
 

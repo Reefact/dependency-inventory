@@ -30,7 +30,8 @@ There is no implicit filter: one or more `--pattern` or `--regex` options are re
 alias of `depinv packages`.
 
 To inventory the target frameworks of every .NET project, use `depinv frameworks` (see
-[Target frameworks](#-target-frameworks)).
+[Target frameworks](#-target-frameworks)). To read the frameworks and dependencies of published package versions
+from an Azure Artifacts feed, use `depinv feed` (see [Published packages](#-published-packages)).
 
 ## 📦 Install
 
@@ -65,7 +66,8 @@ The URL designates the Azure DevOps project, not a Git repository.
 depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*"
 ~~~
 
-The Azure DevOps login and PAT are needed (see Authentication); the PAT needs the Code (Read) scope.
+The Azure DevOps login and PAT are needed (see Authentication); the PAT needs the Code (Read) scope, and the
+Packaging (Read) scope for `depinv feed`.
 
 ### GitLab
 
@@ -161,6 +163,53 @@ Files: *.csproj, *.fsproj, *.vbproj and Directory.Build.props, outside the bin, 
   found nowhere, or a project file that cannot be read, gives a line with an empty Framework and FrameworkSource
   Unresolved: the project is still listed. An unreadable file also makes the repository Partial in repositories.csv.
 - MSBuild conditions are not evaluated: every declared value is listed.
+
+## 📦 Published packages
+
+`depinv feed` reads published package versions from an Azure Artifacts feed: the frameworks each version ships and
+its dependencies, framework references included. Where `depinv frameworks` tells what the code of a repository
+targets today, `depinv feed` tells what each published version actually contains, such as `2.0.0-beta.6`.
+
+~~~powershell
+depinv feed --provider azure --url "https://dev.azure.com/Organization/Project" --feed my-feed --package "Contoso.Messaging@2.0.4"
+~~~
+
+`--provider`, `--url` and the credentials are those of the other commands; the PAT needs the Packaging (Read) scope.
+`--feed` names the feed as an Azure Pipelines task does: `my-feed` for an organization feed, `Project/my-feed` for a
+project feed. GitLab package registries are not supported yet.
+
+The versions to read come from one or more of these options, combined:
+
+- --package "Contoso.Messaging@2.0.4": one version; --package "Contoso.Messaging" reads every published version (repeatable);
+- --versions-from dependency-report/dependencies.csv: every package version listed by `depinv packages`, which are the
+  versions your repositories reference; lines without a literal version are skipped;
+- --pattern "Contoso.*" or --regex: every published version of the feed's packages whose id matches.
+
+--latest keeps only the highest version, prereleases included, of the packages read without a version.
+--dependency-pattern "Microsoft.AspNetCore.*" and --dependency-regex keep only the matching dependencies; all of them are
+reported by default. --case-sensitive applies to both kinds of filters.
+
+~~~powershell
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "*.Vnext.*"
+depinv feed --provider azure --url "https://dev.azure.com/Organization/Project" --feed my-feed --versions-from dependency-report/dependencies.csv --dependency-pattern "Microsoft.AspNetCore.*"
+~~~
+
+The feed-report folder (configurable with --output) contains:
+
+- package-frameworks.csv: one line per package version and framework shipped;
+- package-dependencies.csv: one line per package version, framework and dependency, with its VersionRange and its
+  Kind: Package, or FrameworkReference (such as Microsoft.AspNetCore.App, whose version is the framework's);
+- packages.csv: whether each package version could be read: OK, NotFound or Failed;
+- report.json: full JSON report, including the applied filters.
+
+Package and Version are written as requested, so these files join dependencies.csv on these two columns.
+
+The frameworks come from the dependency groups of each version's .nuspec. A package without dependency groups names
+no framework there: its lib/ and ref/ folders are read instead. Frameworks are written as short monikers, such as
+netstandard2.0 or net8.0, like in frameworks.csv. A dependency without framework applies to all of them.
+
+--parallelism (1 to 8) reads several versions at once; --diagnostics writes every dependency read, unfiltered, to
+diagnostics.json.
 
 ## 🔎 How it works
 

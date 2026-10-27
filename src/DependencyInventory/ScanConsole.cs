@@ -12,6 +12,19 @@ public static class ScanConsole
         AnsiConsole.MarkupLine("Read-only scan; [bold]one branch[/] per repository.");
     }
 
+    public static void FeedHeader()
+    {
+        AnsiConsole.Write(new Rule("[cyan]Dependency Inventory[/]").LeftJustified());
+        AnsiConsole.MarkupLine("Read-only scan of the [bold]published[/] package versions.");
+    }
+
+    public static void Resolving() =>
+        AnsiConsole.MarkupLine("Listing the package versions to read...");
+
+    public static void Feed(string feed, int versions, int unknownPackages) =>
+        AnsiConsole.MarkupLine($"Feed: [blue]{Markup.Escape(feed)}[/] — {versions} package versions to read" +
+            (unknownPackages > 0 ? $", {unknownPackages} packages not found." : "."));
+
     public static void Filters(DependencyMatcher matcher) =>
         AnsiConsole.MarkupLine("Filters (logical OR): " +
             Markup.Escape(string.Join(", ", matcher.Filters)));
@@ -98,6 +111,54 @@ public static class ScanConsole
         AnsiConsole.MarkupLine($"Reports: [green]{Markup.Escape(reportDirectory)}[/]");
         if (result.IncompleteRepositories > 0)
             AnsiConsole.MarkupLine("[yellow]Incomplete scan: see repositories.csv.[/]");
+    }
+
+    /// <summary>Reads the package versions behind a progress bar with one step per version.</summary>
+    public static async Task<T> WithFeedProgressAsync<T>(int versions, Func<IProgress<PackageVersion>, Task<T>> read)
+    {
+        T result = default!;
+        await AnsiConsole.Progress()
+            .AutoClear(false)
+            .Columns(new TaskDescriptionColumn(), new ProgressBarColumn(), new PercentageColumn())
+            .StartAsync(async ctx =>
+            {
+                var task = ctx.AddTask("Reading", maxValue: Math.Max(versions, 1));
+                result = await read(new VersionProgress(task));
+            });
+        return result;
+    }
+
+    public static void FeedSummary(FeedScanResult result, string reportDirectory)
+    {
+        var read = result.Packages.Where(x => x.Status == PackageStatus.OK).ToArray();
+        var summary = new Table().Border(TableBorder.Rounded)
+            .AddColumn("Measure").AddColumn("Value")
+            .AddRow("Package versions read", read.Length.ToString())
+            .AddRow("Packages", read.Select(x => x.Package).Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString())
+            .AddRow("Distinct frameworks", result.Frameworks.Select(x => x.Framework)
+                .Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString())
+            .AddRow("Dependencies kept", result.Dependencies.Count.ToString())
+            .AddRow("Not found", result.NotFound.ToString())
+            .AddRow("Failed", result.Failed.ToString());
+        AnsiConsole.Write(summary);
+        AnsiConsole.MarkupLine($"Reports: [green]{Markup.Escape(reportDirectory)}[/]");
+        if (result.NotFound > 0 || result.Failed > 0)
+            AnsiConsole.MarkupLine("[yellow]Some package versions could not be read: see packages.csv.[/]");
+    }
+
+    // Notified concurrently by the parallel reads.
+    private sealed class VersionProgress(ProgressTask task) : IProgress<PackageVersion>
+    {
+        private readonly Lock _lock = new();
+
+        public void Report(PackageVersion value)
+        {
+            lock (_lock)
+            {
+                task.Description = Markup.Escape($"{value.Id} {value.Version}");
+                task.Increment(1);
+            }
+        }
     }
 
     // Notified concurrently when repositories are scanned in parallel.
