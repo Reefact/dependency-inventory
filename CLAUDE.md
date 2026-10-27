@@ -28,6 +28,7 @@
   - `ReportWriter.cs`, `Models.cs`: reports and their data.
 - `tests/DependencyInventory.Tests/`: unit tests; `FakeRepositoryProvider` serves repositories from memory.
 - `tools/commit-lint/`, `.githooks/`: commit message lint.
+- `.claude/skills/framework-support-chart/`: skill that charts the package versions in use and the support status of their .NET target frameworks, from the reports of `depinv packages` and `depinv feed`.
 - `CONTRIBUTING.md`: build, tests, changelog and commit conventions (the README is for users only).
 - `CHANGELOG.md`: user-facing changes, Keep a Changelog format.
 - `icon.png`, `icon.ico`, `assets/icon.svg`: the package icon, the executable icon (Windows) and the SVG source.

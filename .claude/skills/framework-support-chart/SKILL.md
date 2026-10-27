@@ -1,0 +1,95 @@
+---
+name: framework-support-chart
+description: Builds a bar chart of how many projects use each version of a set of NuGet packages, with the .NET target framework of every version and its support status (out of support in red stripes, support ending soon in orange stripes), as an HTML page and a PNG for wikis such as Confluence. Use it whenever someone wants to see, refresh or share which package versions are in use across their repositories and whether those versions target an obsolete or soon-unsupported .NET, even if they only say "regenerate the chart", "update the version graph" or "which of our libraries are on an old .NET".
+---
+
+# Framework support chart
+
+The chart answers one question for a set of internal NuGet packages: which versions do the projects use,
+and does each of those versions target a .NET that is still supported? Each package gets a band, each
+version a bar whose length is the number of projects referencing it. The label shows the version and its
+target framework, e.g. `2.0.1 (net9.0)`. Bars of a version whose framework is out of support are striped
+red; those whose support ends within a few months are striped orange; a legend gives the dates.
+
+It reads two reports of `depinv` (this repository's tool) and needs nothing else, except Microsoft's
+public release metadata for the support dates.
+
+## 1. Get the two reports
+
+- `dependencies.csv`: who uses which version. It comes from `depinv packages`, filtered on the packages to
+  chart:
+  ```
+  depinv packages --provider azure --url "https://dev.azure.com/<organization>/<project>" --pattern "<glob>"
+  ```
+- `package-frameworks.csv`: the frameworks each published version ships. It comes from `depinv feed`, which
+  reads the package feed; `--versions-from` limits it to the versions in use:
+  ```
+  depinv feed --provider azure --url "https://dev.azure.com/<organization>/<project>" --feed <feed> --versions-from dependency-report/dependencies.csv
+  ```
+
+The user usually runs these commands (they hold the credentials) and hands over the two files. If they
+only have one of them, explain which command produces the other; do not build the chart from a guess.
+
+## 2. Ask for the presentation
+
+Ask the user, in one message, before building anything:
+
+- the **title** and, optionally, the **small line above it** (for instance a team or a scope). Never reuse
+  a title from an earlier chart or invent one from the package names: the chart may be shared, and its
+  wording is the user's;
+- the **language** of the chart texts: English or French (`--lang en|fr`);
+- which **packages** to show, as globs on package ids (`--include`, repeatable); all by default;
+- the **date** of the support status (`--as-of`, today by default) and how many **months** ahead counts
+  as "ending soon" (`--warn-months`, 6 by default).
+
+Propose the defaults so that the user can answer "ok".
+
+## 3. Build it
+
+```bash
+python3 <skill-dir>/scripts/build_chart.py \
+  --dependencies <dependencies.csv> --frameworks <package-frameworks.csv> \
+  --title "<title>" [--eyebrow "<line above>"] [--lang fr] [--include "<glob>" ...] \
+  [--as-of YYYY-MM-DD] [--warn-months 6] \
+  --output <dir>/chart.html
+node <skill-dir>/scripts/render_png.js <dir>/chart.html <dir>/chart.png
+```
+
+Write the outputs in the scratchpad, or wherever the user asks; they are not part of the repository.
+
+`build_chart.py` prints the packages, the reference count and one line per framework group. Read it: the
+total should match the number of references the user expects, and each framework should have the status
+you expect from its dates. Then look once at the PNG for clipped labels or overlaps.
+
+`render_png.js` needs Playwright for Node, which the cloud sessions provide. It removes the collapsible
+data table, which an image cannot open, and renders at twice the size so that the image stays sharp.
+
+## 4. Deliver it
+
+- Publish the HTML page as an artifact: it keeps the tooltips and the data table. It is private until the
+  user shares it.
+- Send the PNG: it is the version to paste into Confluence or another wiki, which do not run the page's
+  script.
+
+Tell the user the date of the support status: the chart is right on that date, and orange bars turn red
+when their support ends.
+
+## How the statuses are decided
+
+- **.NET 5 and later, .NET Core** (`net8.0`, `netcoreapp3.1`, `net8.0-windows`...): the end-of-support
+  date of the channel comes from Microsoft's release metadata
+  (`https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json`), read at each build.
+  Without network access, pass `--eol-file` with a JSON object such as `{"8.0": "2026-11-10"}`.
+- **.NET Standard** has no end of support: a library targeting it runs on every supported .NET.
+- **.NET Framework** (`net48`, `net462`...) is not in that metadata. The script holds its dates in
+  `NET_FRAMEWORK_EOL`, checked in October 2026. When a chart contains .NET Framework versions, check
+  Microsoft's lifecycle page for .NET Framework and update the table if a date has changed.
+- A version that ships several frameworks takes the status of its best-supported one: consumers can use
+  that one. Each framework is still colored in the label.
+- A version missing from `package-frameworks.csv` (not read from the feed) shows `(?)` and counts in an
+  "unknown framework" legend line, so a gap in the data is never shown as healthy.
+- References without a literal version (an MSBuild property, a range) cannot be placed on a bar; the
+  footer counts them.
+
+Versions are ordered as NuGet orders them, prereleases before their release. Packages are ordered by
+number of references; the seven most used get the categorical colors in a fixed order, the others grey.
