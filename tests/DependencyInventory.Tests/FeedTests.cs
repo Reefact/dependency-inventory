@@ -481,6 +481,25 @@ public sealed class FeedTests
         }
     }
 
+    [Theory]
+    [InlineData("2.0")]
+    [InlineData("2.0.0.0")]
+    [InlineData("2.0.0+build.42")]
+    public async Task TheClientRequestsNormalizedVersions(string version)
+    {
+        var (feed, server) = Client(new()
+        {
+            [Index] = IndexResponse,
+            [Base + "a/2.0.0/a.nuspec"] = Ok("<package />"),
+            [Base + "a/2.0.0/a.2.0.0.nupkg"] = Ok("zip")
+        });
+        using (feed)
+        {
+            Assert.Equal("<package />", await feed.GetNuspecAsync("A", version, default));
+            Assert.NotNull(await feed.GetPackageAsync("A", version, default));
+        }
+    }
+
     [Fact]
     public async Task TheClientReportsAnUnknownPackageOrVersionAsNull()
     {
@@ -507,10 +526,20 @@ public sealed class FeedTests
     [Fact]
     public async Task TheClientReadsThePublicationsOfThePackageNamedExactly()
     {
-        const string api = "https://feeds.dev.azure.com/acme/_apis/packaging/Feeds/feed/packages?protocolType=NuGet&packageNameQuery=Stime.Core.Vnext.Messaging&includeAllVersions=true&api-version=7.1";
-        var (feed, _) = Client(new()
+        const string api = "https://feeds.dev.azure.com/acme/_apis/packaging/Feeds/feed/packages?protocolType=NuGet&packageNameQuery=Stime.Core.Vnext.Messaging&includeAllVersions=true";
+        var (feed, server) = Client(new()
         {
-            [api] = Ok("""
+            // Prereleases and delisted versions are only returned by the filtered requests.
+            [api + "&isRelease=false&api-version=7.1"] = Ok("""
+                {"value":[{"name":"Stime.Core.Vnext.Messaging","versions":[
+                  {"normalizedVersion":"2.1.0-beta.6","isListed":true},
+                  {"normalizedVersion":"2.0.4","isListed":true}
+                ]}]}
+                """),
+            [api + "&isRelease=false&isListed=false&api-version=7.1"] = Ok("""
+                {"value":[{"name":"Stime.Core.Vnext.Messaging","versions":[{"normalizedVersion":"2.0.0-beta.6","isListed":false}]}]}
+                """),
+            [api + "&api-version=7.1"] = Ok("""
                 {"value":[
                   {"name":"Stime.Core.Vnext.Messaging.Extensions","versions":[{"normalizedVersion":"9.9.9"}]},
                   {"name":"Stime.Core.Vnext.Messaging","versions":[
@@ -524,12 +553,12 @@ public sealed class FeedTests
         {
             var publications = await feed.GetPublicationsAsync("Stime.Core.Vnext.Messaging", default);
 
-            Assert.Equal(2, publications.Count);
+            Assert.Equal(["2.0.4 True", "2.1.0-beta.6 False", "2.0.0-beta.6 False"],
+                publications.Select(p => $"{p.Version} {p.Listed}"));
             Assert.Equal(new DateTimeOffset(2025, 3, 14, 9, 30, 0, 123, TimeSpan.Zero), publications[0].Published);
             Assert.Equal(["Release", "Prerelease"], publications[0].Views);
-            Assert.Equal(new PackagePublication("2.1.0-beta.6", null, false, []) with { Views = publications[1].Views },
-                publications[1]);
             Assert.Empty(publications[1].Views);
+            Assert.Equal(4, server.Requests.Count);
             Assert.Empty(await feed.GetPublicationsAsync("Unknown", default));
         }
     }
