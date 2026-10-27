@@ -150,6 +150,27 @@ public sealed class ScanTests
     }
 
     [Theory]
+    [InlineData("<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>", "net8.0")]
+    [InlineData("<Project><PropertyGroup><TargetFrameworks>net8.0; netstandard2.0;net8.0</TargetFrameworks></PropertyGroup></Project>",
+        "net8.0,netstandard2.0")]
+    [InlineData("<Project><PropertyGroup><TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion></PropertyGroup></Project>",
+        "net472")]
+    [InlineData("<Project><PropertyGroup><TargetFramework>$(Tfm)</TargetFramework></PropertyGroup></Project>", "")]
+    [InlineData("<Project />", "")]
+    public void ParseFrameworksReadsTargetFrameworks(string xml, string expected)
+    {
+        var frameworks = NuGetDependencyParser.ParseFrameworks("/src/Api.csproj", xml);
+        Assert.Equal(expected, string.Join(",", frameworks));
+    }
+
+    [Fact]
+    public void ParseFrameworksIgnoresPackagesConfig()
+    {
+        Assert.Empty(NuGetDependencyParser.ParseFrameworks("/packages.config",
+            """<packages><package id="A" version="1.0" targetFramework="net48" /></packages>"""));
+    }
+
+    [Theory]
     [InlineData("/src/Api/Api.csproj", true)]
     [InlineData("/src/Api/Api.FSPROJ", true)]
     [InlineData(@"src\Legacy\Legacy.vbproj", true)]
@@ -172,7 +193,8 @@ public sealed class ScanTests
                 new("project", "api", "main", "abc", "/Directory.Packages.props", "Stime.Web", "2.0.0",
                     PackageKind.CentralVersion, VersionSource.Explicit, ["Glob:Stime.*"], "https://example/props")
             ],
-            [new("project", "api", "main", CoverageStatus.Partial, 1, 1, null)]);
+            [new("project", "api", "main", CoverageStatus.Partial, 1, 1, null)],
+            [new("project", "api", "main", "abc", "/src/Api.csproj", "net8.0", "https://example/web")]);
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         try
         {
@@ -184,6 +206,8 @@ public sealed class ScanTests
                 await File.ReadAllTextAsync(Path.Combine(directory, "central-versions.csv")));
             Assert.Contains(";Partial;",
                 await File.ReadAllTextAsync(Path.Combine(directory, "repositories.csv")));
+            Assert.Contains(";net8.0;",
+                await File.ReadAllTextAsync(Path.Combine(directory, "frameworks.csv")));
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
             Assert.Contains("\"Kind\": \"CentralVersion\"", json);
             Assert.Contains("\"VersionSource\": \"Central\"", json);

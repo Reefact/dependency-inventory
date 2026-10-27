@@ -142,7 +142,7 @@ public sealed class ScanCommand : AsyncCommand<ScanSettings>
                     parallelism, progress, cancellationToken));
 
             var report = new ScanReport(DateTimeOffset.UtcNow, api.Origin, matcher.Filters,
-                result.Occurrences, result.Coverage);
+                result.Occurrences, result.Coverage, result.Frameworks);
             var paths = await ReportWriter.SaveAsync(report, settings.Output, cancellationToken);
             if (settings.Diagnostics)
             {

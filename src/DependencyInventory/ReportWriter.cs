@@ -22,6 +22,10 @@ public static class ReportWriter
             report.Occurrences.Where(x => x.Kind == PackageKind.Reference).Select(ToColumns), ct);
         await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"), columns,
             report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(ToColumns), ct);
+        await WriteCsvAsync(Path.Combine(absolute, "frameworks.csv"),
+            ["Project", "Repository", "Branch", "Commit", "File", "Framework", "Url"],
+            report.Frameworks.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.File,
+                x.Framework, x.Url }), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
             ["Project", "Repository", "Branch", "Status", "FilesExamined", "References", "Details"],
             report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),

@@ -14,7 +14,9 @@ public sealed class RepositoryScannerTests
             ["/Directory.Packages.props"] =
                 """<Project><ItemGroup><PackageVersion Include="Stime.Core" Version="3.0.0" /></ItemGroup></Project>""",
             ["/src/Api/Api.csproj"] = """
-                <Project><ItemGroup>
+                <Project>
+                <PropertyGroup><TargetFrameworks>net8.0;net10.0</TargetFrameworks></PropertyGroup>
+                <ItemGroup>
                   <PackageReference Include="Stime.Core" />
                   <PackageReference Include="Serilog" Version="4.0.0" />
                   <PackageReference Include="Newtonsoft.Json" Version="13.0.0" />
@@ -62,6 +64,17 @@ public sealed class RepositoryScannerTests
     {
         var result = await ScanAsync(Provider(), repository);
         Assert.Equal(expected, result.Coverage.Details);
+    }
+
+    [Fact]
+    public async Task TargetFrameworksAreReportedWhateverTheFilters()
+    {
+        var result = await ScanAsync(Provider(), "api");
+
+        Assert.Equal(["net8.0", "net10.0"], result.Frameworks.Select(x => x.Framework));
+        var first = result.Frameworks[0];
+        Assert.Equal("/src/Api/Api.csproj", first.File);
+        Assert.Equal("api-sha", first.Commit);
     }
 
     [Fact]
