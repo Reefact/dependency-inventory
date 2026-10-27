@@ -208,8 +208,8 @@ public static class RepositoryScanner
             if (read.Branch is not { } branch)
                 return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"), hits);
 
-            var parsedFiles = new Dictionary<string, IReadOnlyList<ParsedPackage>>(
-                StringComparer.OrdinalIgnoreCase);
+            // Git paths are case-sensitive: two paths differing only by case are two files.
+            var parsedFiles = new Dictionary<string, IReadOnlyList<ParsedPackage>>(StringComparer.Ordinal);
             foreach (var file in read.Files)
             {
                 diagnostic?.Files.Add(new FileDiagnostic(file.Path, file.ContentLength, file.Parsed ?? [], file.Error));

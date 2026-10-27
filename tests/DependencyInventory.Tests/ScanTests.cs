@@ -138,6 +138,18 @@ public sealed class ScanTests
     }
 
     [Fact]
+    public void CentralVersionOnlyUsesPropsOfFoldersOfTheSameCase()
+    {
+        var files = new Dictionary<string, IReadOnlyList<ParsedPackage>>
+        {
+            ["/Directory.Packages.props"] = [new("Stime.Core.Logging", "1.0", PackageKind.CentralVersion, VersionSource.Explicit)],
+            ["/src/App/Directory.Packages.props"] = [new("Stime.Core.Logging", "2.0", PackageKind.CentralVersion, VersionSource.Explicit)]
+        };
+        Assert.Equal("1.0", NuGetDependencyParser.ResolveCentralVersion(
+            "/src/app/Api.csproj", "Stime.Core.Logging", files));
+    }
+
+    [Fact]
     public void CentralVersionOnlyUsesNearestProps()
     {
         var files = new Dictionary<string, IReadOnlyList<ParsedPackage>>

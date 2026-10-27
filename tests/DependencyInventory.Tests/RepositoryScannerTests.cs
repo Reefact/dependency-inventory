@@ -65,6 +65,25 @@ public sealed class RepositoryScannerTests
     }
 
     [Fact]
+    public async Task PathsDifferingOnlyByCaseAreTwoFiles()
+    {
+        var api = new FakeRepositoryProvider().AddRepository("cased", files: new Dictionary<string, string>
+        {
+            ["/src/App/App.csproj"] =
+                """<Project><ItemGroup><PackageReference Include="Serilog" Version="3.0.0" /></ItemGroup></Project>""",
+            ["/src/app/App.csproj"] =
+                """<Project><ItemGroup><PackageReference Include="Serilog" Version="4.0.0" /></ItemGroup></Project>"""
+        });
+
+        var result = await ScanAsync(api, "cased");
+
+        Assert.Equal(["/src/App/App.csproj 3.0.0", "/src/app/App.csproj 4.0.0"],
+            result.Occurrences.Select(x => $"{x.File} {x.Version}").Order(StringComparer.Ordinal));
+        Assert.Equal(2, result.Coverage.References);
+        Assert.Equal(2, result.Coverage.FilesExamined);
+    }
+
+    [Fact]
     public async Task MatchingReferencesAreReportedWithTheirCentralVersion()
     {
         var result = await ScanAsync(Provider(), "api");
