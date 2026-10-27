@@ -148,7 +148,7 @@ It takes the same options as `depinv packages` except the filters (`--pattern`, 
 The framework-report folder (configurable with --output) contains:
 
 - frameworks.csv: one line per project file and target framework: ProjectFile, Framework, FrameworkSource, branch, commit;
-- repositories.csv: coverage of every repository found and its scan status, with the number of projects read;
+- repositories.csv: coverage of every repository found and its scan status, with the number of projects found;
 - report.json: full JSON report.
 
 Files: *.csproj, *.fsproj, *.vbproj and Directory.Build.props, outside the bin, obj, node_modules and .git folders.
@@ -158,7 +158,8 @@ Files: *.csproj, *.fsproj, *.vbproj and Directory.Build.props, outside the bin, 
 - A project that declares no framework inherits it from the nearest Directory.Build.props, the only one MSBuild
   imports automatically; FrameworkSource is then DirectoryBuildProps instead of Project.
 - A framework that cannot be read literally, such as `$(DefaultTargetFramework)`, or a project whose framework is
-  found nowhere, gives a line with an empty Framework and FrameworkSource Unresolved: the project is still listed.
+  found nowhere, or a project file that cannot be read, gives a line with an empty Framework and FrameworkSource
+  Unresolved: the project is still listed. An unreadable file also makes the repository Partial in repositories.csv.
 - MSBuild conditions are not evaluated: every declared value is listed.
 
 ## 🔎 How it works

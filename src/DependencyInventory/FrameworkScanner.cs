@@ -42,7 +42,7 @@ public static class FrameworkScanner
     }
 
     /// <summary>
-    /// Scans one repository on its selected branch: one entry per framework of every project file read.
+    /// Scans one repository on its selected branch: one entry per framework of every project file found.
     /// Failures are reported in the coverage, never thrown, except cancellation.
     /// </summary>
     public static async Task<FrameworkRepositoryResult> ScanRepositoryAsync(IRepositoryProvider api,
@@ -85,9 +85,8 @@ public static class FrameworkScanner
                 else failures.Add($"{file.Path}: {file.Error}");
             }
 
-            var projects = files
-                .Where(f => f.Value is not null && NuGetDependencyParser.IsProjectFile(f.Key))
-                .Select(f => f.Key).ToArray();
+            // An unreadable project stays listed, as unresolved, and makes the repository partial.
+            var projects = files.Keys.Where(NuGetDependencyParser.IsProjectFile).ToArray();
             foreach (var project in projects)
             foreach (var resolved in FrameworkParser.Resolve(project, files))
                 frameworks.Add(new FrameworkOccurrence(repo.Project, repo.Name, branch.Name, branch.ObjectId,
