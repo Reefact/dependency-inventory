@@ -53,7 +53,7 @@ TEXT = {
         "ends_on": lambda d: f"end of support on {d}",
         "supported_until": lambda d: f"supported until {d}",
         "follows_windows": "supported with the Windows version it runs on",
-        "netstandard": "no end of support, runs on every supported .NET",
+        "netstandard": "no end of support, compatible with the .NET implementations that support this .NET Standard version",
         "unrecognized": "framework not recognized: support status unknown",
         "missing": "version missing from the feed report",
         "legend_supported": "Supported",
@@ -74,7 +74,8 @@ TEXT = {
         "ends_on": lambda d: f"fin de prise en charge le {d}",
         "supported_until": lambda d: f"pris en charge jusqu'au {d}",
         "follows_windows": "pris en charge selon le cycle de vie de Windows",
-        "netstandard": "compatible avec toutes les versions de .NET prises en charge",
+        "netstandard": "pas de fin de prise en charge, compatible avec les implémentations de .NET qui prennent en charge "
+                       "cette version de .NET Standard",
         "unrecognized": "framework non reconnu : prise en charge inconnue",
         "missing": "version absente du rapport du flux",
         "legend_supported": "Pris en charge",

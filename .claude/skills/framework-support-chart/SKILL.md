@@ -84,7 +84,9 @@ when their support ends.
   date of the channel comes from Microsoft's release metadata
   (`https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json`), read at each build.
   Without network access, pass `--eol-file` with a JSON object such as `{"8.0": "2026-11-10"}`.
-- **.NET Standard** has no end of support: a library targeting it runs on every supported .NET.
+- **.NET Standard** has no end of support of its own: a library targeting it runs on the .NET
+  implementations that support that .NET Standard version. That is not all of them: .NET Framework stops at
+  .NET Standard 2.0, so a `netstandard2.1` library does not run on it. Keep the chart's wording to that.
 - **.NET Framework** (`net48`, `net462`...) is not in that metadata. The script holds its dates in
   `NET_FRAMEWORK_EOL`, checked in October 2026. When a chart contains .NET Framework versions, check
   Microsoft's lifecycle page for .NET Framework and update the table if a date has changed.
