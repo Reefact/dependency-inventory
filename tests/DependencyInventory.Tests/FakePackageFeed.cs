@@ -6,6 +6,8 @@ internal sealed class FakePackageFeed : IPackageFeed
     private readonly Dictionary<string, Dictionary<string, (string? Nuspec, byte[]? Package)>> _packages =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _failing = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<PackagePublication>> _publications = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _failingPublications = new(StringComparer.OrdinalIgnoreCase);
 
     public string Origin => "https://pkgs.dev.azure.com/acme/_packaging/feed/nuget/v3/index.json";
 
@@ -14,6 +16,19 @@ internal sealed class FakePackageFeed : IPackageFeed
         if (!_packages.TryGetValue(id, out var versions))
             _packages[id] = versions = new Dictionary<string, (string?, byte[]?)>(StringComparer.OrdinalIgnoreCase);
         versions[version] = (nuspec, package);
+        return this;
+    }
+
+    public FakePackageFeed Publish(string id, string version, DateTimeOffset published, bool listed, params string[] views)
+    {
+        if (!_publications.TryGetValue(id, out var publications)) _publications[id] = publications = [];
+        publications.Add(new PackagePublication(version.ToLowerInvariant(), published, listed, views));
+        return this;
+    }
+
+    public FakePackageFeed FailPublications(string id)
+    {
+        _failingPublications.Add(id);
         return this;
     }
 
@@ -29,6 +44,12 @@ internal sealed class FakePackageFeed : IPackageFeed
     public Task<IReadOnlyList<string>?> GetVersionsAsync(string id, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<string>?>(_packages.TryGetValue(id, out var versions)
             ? versions.Keys.Select(v => v.ToLowerInvariant()).ToArray() : null);
+
+    public Task<IReadOnlyList<PackagePublication>> GetPublicationsAsync(string id, CancellationToken ct) =>
+        _failingPublications.Contains(id)
+            ? throw new HttpRequestException("feed API unavailable")
+            : Task.FromResult<IReadOnlyList<PackagePublication>>(
+                _publications.TryGetValue(id, out var publications) ? publications : []);
 
     public Task<string?> GetNuspecAsync(string id, string version, CancellationToken ct) =>
         _failing.Contains($"{id}/{version}")

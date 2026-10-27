@@ -7,8 +7,11 @@ namespace DependencyInventory;
 /// <summary>A dependency declared by a .nuspec; no framework when it applies to all of them.</summary>
 public sealed record NuspecDependency(string? Framework, string Id, string? VersionRange, DependencyKind Kind);
 
-/// <summary>What a .nuspec declares: its target frameworks and its dependencies.</summary>
-public sealed record NuspecContent(IReadOnlyList<string> Frameworks, IReadOnlyList<NuspecDependency> Dependencies);
+/// <summary>What a .nuspec declares: its metadata, its target frameworks and its dependencies.</summary>
+public sealed record NuspecContent(
+    PackageMetadata Metadata,
+    IReadOnlyList<string> Frameworks,
+    IReadOnlyList<NuspecDependency> Dependencies);
 
 public static class NuspecParser
 {
@@ -48,7 +51,28 @@ public static class NuspecParser
                 }
             }
         }
-        return new NuspecContent(frameworks, dependencies);
+        return new NuspecContent(ReadMetadata(metadata), frameworks, dependencies);
+    }
+
+    private static PackageMetadata ReadMetadata(XElement? metadata)
+    {
+        string? Text(string name) =>
+            metadata?.Elements().FirstOrDefault(e => e.Name.LocalName == name) is { } element &&
+            element.Value.Trim() is { Length: > 0 } value ? value : null;
+        string? Attribute(string element, string name) =>
+            (string?)metadata?.Elements().FirstOrDefault(e => e.Name.LocalName == element)?.Attribute(name);
+
+        var packageTypes = metadata?.Elements().FirstOrDefault(e => e.Name.LocalName == "packageTypes")?.Elements()
+            .Select(t => (string?)t.Attribute("name")).Where(n => !string.IsNullOrWhiteSpace(n)).ToArray() ?? [];
+        return new PackageMetadata(
+            Text("id"), Text("title"), Text("authors"), Text("owners"), Text("description"), Text("summary"),
+            Text("releaseNotes"), Text("copyright"), Text("language"), Text("tags"), Text("projectUrl"),
+            Text("iconUrl"), Text("icon"), Text("readme"), Text("license"), Attribute("license", "type"),
+            Text("licenseUrl"), Text("requireLicenseAcceptance"), Text("developmentDependency"),
+            Text("serviceable"), Text("minClientVersion") ?? (string?)metadata?.Attribute("minClientVersion"),
+            packageTypes.Length > 0 ? string.Join(" | ", packageTypes) : null,
+            Attribute("repository", "type"), Attribute("repository", "url"), Attribute("repository", "branch"),
+            Attribute("repository", "commit"));
     }
 
     /// <summary>The frameworks of the lib/ and ref/ folders of a .nupkg, e.g. lib/net8.0/ gives net8.0.</summary>

@@ -28,14 +28,14 @@ public sealed record FeedRequest(
     DependencyMatcher? PackageFilter,
     bool Latest);
 
-public sealed record FeedResolution(IReadOnlyList<PackageVersion> Versions, IReadOnlyList<PackageCoverage> Unknown);
+public sealed record FeedResolution(IReadOnlyList<PackageVersion> Versions, IReadOnlyList<PackageInfo> Unknown);
 
 /// <summary>Everything read for one package version, written to diagnostics.json with --diagnostics.</summary>
 public sealed record PackageDiagnostic(
     string Package,
     string Version,
     PackageStatus Status,
-    bool FrameworksFromPackageFolders,
+    FrameworksFrom? FrameworksFrom,
     IReadOnlyList<string> Frameworks,
     IReadOnlyList<NuspecDependency> Dependencies,
     string? Error);
@@ -43,7 +43,7 @@ public sealed record PackageDiagnostic(
 public sealed record FeedScanResult(
     IReadOnlyList<PackageFramework> Frameworks,
     IReadOnlyList<PackageDependency> Dependencies,
-    IReadOnlyList<PackageCoverage> Packages,
+    IReadOnlyList<PackageInfo> Packages,
     IReadOnlyList<PackageDiagnostic> Diagnostics)
 {
     public int Failed => Packages.Count(x => x.Status == PackageStatus.Failed);
@@ -64,7 +64,7 @@ public static class FeedScanner
         // written by the user, which reports are joined on.
         var versions = request.Packages.Where(p => p.Version is not null)
             .Select(p => new PackageVersion(p.Id, p.Version!)).ToList();
-        var unknown = new List<PackageCoverage>();
+        var unknown = new List<PackageInfo>();
         var wholePackages = request.Packages.Where(p => p.Version is null).Select(p => p.Id).ToList();
         if (request.PackageFilter is { } filter)
             wholePackages.AddRange((await feed.GetPackageIdsAsync(ct)).Where(id => filter.Match(id).Count > 0));
@@ -74,7 +74,7 @@ public static class FeedScanner
             var published = await feed.GetVersionsAsync(id, ct);
             if (published is null)
             {
-                unknown.Add(new PackageCoverage(id, "", PackageStatus.NotFound, "Package not found in the feed"));
+                unknown.Add(new PackageInfo(id, "", PackageStatus.NotFound, "Package not found in the feed"));
                 continue;
             }
             var parsed = published
@@ -93,67 +93,96 @@ public static class FeedScanner
     }
 
     /// <summary>
-    /// Reads every resolved version: its frameworks and its dependencies kept by <paramref name="dependencyFilter"/>
-    /// (all of them without filter). The coverage lists the unknown packages first, then the versions in the
-    /// resolved order whatever the parallelism.
-    /// A version that cannot be read is reported in the coverage, never thrown, except cancellation.
+    /// Reads every resolved version: its metadata, its publication, its frameworks and its dependencies kept by
+    /// <paramref name="dependencyFilter"/> (all of them without filter).
+    /// The packages list the unknown ones first, then the versions in the resolved order whatever the parallelism.
+    /// A version that cannot be read is reported in the packages, never thrown, except cancellation.
     /// </summary>
     public static async Task<FeedScanResult> ReadAsync(IPackageFeed feed, FeedResolution resolution,
         DependencyMatcher? dependencyFilter, int parallelism, IProgress<PackageVersion>? progress,
         CancellationToken ct)
     {
+        var options = new ParallelOptions { MaxDegreeOfParallelism = parallelism, CancellationToken = ct };
         var versions = resolution.Versions;
-        var diagnostics = new PackageDiagnostic[versions.Count];
-        await Parallel.ForEachAsync(Enumerable.Range(0, versions.Count),
-            new ParallelOptions { MaxDegreeOfParallelism = parallelism, CancellationToken = ct },
-            async (index, token) =>
-            {
-                diagnostics[index] = await ReadVersionAsync(feed, versions[index], token);
-                progress?.Report(versions[index]);
-            });
+
+        // The publications are listed once per package, for all its versions.
+        var ids = versions.Select(v => v.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var publications = new (IReadOnlyList<PackagePublication> Versions, string? Error)[ids.Length];
+        await Parallel.ForEachAsync(Enumerable.Range(0, ids.Length), options, async (index, token) =>
+        {
+            try { publications[index] = (await feed.GetPublicationsAsync(ids[index], token), null); }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch (Exception ex) { publications[index] = ([], $"Publication unknown: {ex.Message}"); }
+        });
+        var publicationsById = ids.Zip(publications)
+            .ToDictionary(x => x.First, x => x.Second, StringComparer.OrdinalIgnoreCase);
+
+        var reads = new VersionRead[versions.Count];
+        await Parallel.ForEachAsync(Enumerable.Range(0, versions.Count), options, async (index, token) =>
+        {
+            reads[index] = await ReadVersionAsync(feed, versions[index], token);
+            progress?.Report(versions[index]);
+        });
 
         var frameworks = new List<PackageFramework>();
         var dependencies = new List<PackageDependency>();
-        foreach (var read in diagnostics)
+        var packages = new List<PackageInfo>(resolution.Unknown);
+        for (var index = 0; index < versions.Count; index++)
         {
-            frameworks.AddRange(read.Frameworks.Select(f => new PackageFramework(read.Package, read.Version, f)));
+            var (id, version) = versions[index];
+            var read = reads[index];
+            frameworks.AddRange(read.Frameworks.Select(f => new PackageFramework(id, version, f)));
             dependencies.AddRange(read.Dependencies
                 .Where(d => dependencyFilter is null || dependencyFilter.Match(d.Id).Count > 0)
-                .Select(d => new PackageDependency(read.Package, read.Version, d.Framework ?? "", d.Id,
-                    d.VersionRange, d.Kind)));
+                .Select(d => new PackageDependency(id, version, d.Framework ?? "", d.Id, d.VersionRange, d.Kind)));
+
+            var (published, publicationError) = publicationsById[id];
+            var publication = published.FirstOrDefault(p => NuGetVersion.TryParse(p.Version, out var v) &&
+                v == NuGetVersion.Parse(version));
+            packages.Add(new PackageInfo(id, version, read.Status,
+                read.Error ?? (read.Status == PackageStatus.OK ? publicationError : null),
+                read.FrameworksFrom, publication?.Published, publication?.Listed, publication?.Views, read.Metadata));
         }
-        return new FeedScanResult(frameworks, dependencies,
-            resolution.Unknown
-                .Concat(diagnostics.Select(d => new PackageCoverage(d.Package, d.Version, d.Status, d.Error)))
-                .ToArray(),
-            diagnostics);
+        var diagnostics = versions.Zip(reads, (v, read) => new PackageDiagnostic(v.Id, v.Version, read.Status,
+            read.FrameworksFrom, read.Frameworks, read.Dependencies, read.Error)).ToArray();
+        return new FeedScanResult(frameworks, dependencies, packages, diagnostics);
     }
 
-    private static async Task<PackageDiagnostic> ReadVersionAsync(IPackageFeed feed, PackageVersion version,
+    private sealed record VersionRead(
+        PackageStatus Status,
+        string? Error,
+        FrameworksFrom? FrameworksFrom = null,
+        IReadOnlyList<string>? FrameworkList = null,
+        IReadOnlyList<NuspecDependency>? DependencyList = null,
+        PackageMetadata? Metadata = null)
+    {
+        public IReadOnlyList<string> Frameworks => FrameworkList ?? [];
+        public IReadOnlyList<NuspecDependency> Dependencies => DependencyList ?? [];
+    }
+
+    private static async Task<VersionRead> ReadVersionAsync(IPackageFeed feed, PackageVersion version,
         CancellationToken ct)
     {
         try
         {
             var nuspec = await feed.GetNuspecAsync(version.Id, version.Version, ct);
-            if (nuspec is null)
-                return new PackageDiagnostic(version.Id, version.Version, PackageStatus.NotFound, false, [], [],
-                    "Version not found in the feed");
+            if (nuspec is null) return new VersionRead(PackageStatus.NotFound, "Version not found in the feed");
 
             var content = NuspecParser.Parse(nuspec);
             if (content.Frameworks.Count > 0)
-                return new PackageDiagnostic(version.Id, version.Version, PackageStatus.OK, false,
-                    content.Frameworks, content.Dependencies, null);
+                return new VersionRead(PackageStatus.OK, null, FrameworksFrom.Nuspec, content.Frameworks,
+                    content.Dependencies, content.Metadata);
 
             // Without dependency groups, the .nuspec does not name the frameworks: the package folders do.
             await using var package = await feed.GetPackageAsync(version.Id, version.Version, ct)
                 ?? throw new InvalidOperationException("The package file is missing from the feed.");
-            return new PackageDiagnostic(version.Id, version.Version, PackageStatus.OK, true,
-                NuspecParser.FrameworksFromPackage(package), content.Dependencies, null);
+            return new VersionRead(PackageStatus.OK, null, FrameworksFrom.PackageFolders,
+                NuspecParser.FrameworksFromPackage(package), content.Dependencies, content.Metadata);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            return new PackageDiagnostic(version.Id, version.Version, PackageStatus.Failed, false, [], [], ex.Message);
+            return new VersionRead(PackageStatus.Failed, ex.Message);
         }
     }
 }

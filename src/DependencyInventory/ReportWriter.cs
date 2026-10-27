@@ -68,8 +68,12 @@ public static class ReportWriter
             report.Dependencies.Select(x => new[] { x.Package, x.Version, x.Framework, x.Dependency,
                 x.VersionRange ?? "", x.Kind.ToString() }), ct);
         await WriteCsvAsync(Path.Combine(absolute, "packages.csv"),
-            ["Package", "Version", "Status", "Details"],
-            report.Packages.Select(x => new[] { x.Package, x.Version, x.Status.ToString(), x.Details ?? "" }), ct);
+            ["Package", "Version", "Status", "Details", "FrameworksFrom", "Published", "Listed", "Views",
+                "Id", "Title", "Authors", "Owners", "Description", "Summary", "ReleaseNotes", "Copyright", "Language",
+                "Tags", "ProjectUrl", "IconUrl", "Icon", "Readme", "License", "LicenseType", "LicenseUrl",
+                "RequireLicenseAcceptance", "DevelopmentDependency", "Serviceable", "MinClientVersion", "PackageTypes",
+                "RepositoryType", "RepositoryUrl", "RepositoryBranch", "RepositoryCommit"],
+            report.Packages.Select(PackageColumns), ct);
         return absolute;
     }
 
@@ -79,6 +83,20 @@ public static class ReportWriter
     {
         var json = JsonSerializer.Serialize(diagnostics, new JsonSerializerOptions { WriteIndented = true });
         return File.WriteAllTextAsync(Path.Combine(directory, "diagnostics.json"), json, ct);
+    }
+
+    private static string[] PackageColumns(PackageInfo x)
+    {
+        var m = x.Metadata;
+        return [x.Package, x.Version, x.Status.ToString(), x.Details ?? "", x.FrameworksFrom?.ToString() ?? "",
+            x.Published?.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            x.Listed switch { true => "true", false => "false", null => "" }, string.Join(" | ", x.Views ?? []),
+            m?.Id ?? "", m?.Title ?? "", m?.Authors ?? "", m?.Owners ?? "", m?.Description ?? "", m?.Summary ?? "",
+            m?.ReleaseNotes ?? "", m?.Copyright ?? "", m?.Language ?? "", m?.Tags ?? "", m?.ProjectUrl ?? "",
+            m?.IconUrl ?? "", m?.Icon ?? "", m?.Readme ?? "", m?.License ?? "", m?.LicenseType ?? "",
+            m?.LicenseUrl ?? "", m?.RequireLicenseAcceptance ?? "", m?.DevelopmentDependency ?? "",
+            m?.Serviceable ?? "", m?.MinClientVersion ?? "", m?.PackageTypes ?? "", m?.RepositoryType ?? "",
+            m?.RepositoryUrl ?? "", m?.RepositoryBranch ?? "", m?.RepositoryCommit ?? ""];
     }
 
     private static string[] ToColumns(PackageOccurrence x) =>

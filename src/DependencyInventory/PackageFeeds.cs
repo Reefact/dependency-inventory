@@ -16,6 +16,9 @@ public interface IPackageFeed : IDisposable
     /// <summary>The published versions of a package; null when the feed does not know it.</summary>
     Task<IReadOnlyList<string>?> GetVersionsAsync(string id, CancellationToken ct);
 
+    /// <summary>How the versions of a package are published; empty when the feed does not know it.</summary>
+    Task<IReadOnlyList<PackagePublication>> GetPublicationsAsync(string id, CancellationToken ct);
+
     /// <summary>The .nuspec of a version; null when the version is not in the feed.</summary>
     Task<string?> GetNuspecAsync(string id, string version, CancellationToken ct);
 
@@ -88,6 +91,34 @@ public sealed class AzureArtifactsFeed : IPackageFeed
             ids.AddRange(page);
             if (page.Length < PageSize) return ids;
         }
+    }
+
+    public async Task<IReadOnlyList<PackagePublication>> GetPublicationsAsync(string id, CancellationToken ct)
+    {
+        // packageNameQuery matches names containing the id: the package itself is the one named exactly so.
+        using var document = await ReadJsonAsync($"{_feed.PackagesApiUrl}?protocolType=NuGet" +
+            $"&packageNameQuery={Uri.EscapeDataString(id)}&includeAllVersions=true&api-version=7.1", ct);
+        var package = document?.RootElement.GetProperty("value").EnumerateArray()
+            .FirstOrDefault(p => p.TryGetProperty("name", out var name) &&
+                string.Equals(name.GetString(), id, StringComparison.OrdinalIgnoreCase));
+        if (package is not { ValueKind: JsonValueKind.Object } found ||
+            !found.TryGetProperty("versions", out var versions))
+            return [];
+
+        return versions.EnumerateArray()
+            .Select(v => new PackagePublication(
+                v.TryGetProperty("normalizedVersion", out var normalized) ? normalized.GetString() ?? "" : "",
+                v.TryGetProperty("publishDate", out var date) && date.TryGetDateTimeOffset(out var published)
+                    ? published : null,
+                v.TryGetProperty("isListed", out var listed) && listed.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    ? listed.GetBoolean() : null,
+                v.TryGetProperty("views", out var views) && views.ValueKind == JsonValueKind.Array
+                    ? views.EnumerateArray()
+                        .Select(view => view.TryGetProperty("name", out var name) ? name.GetString() : null)
+                        .Where(name => !string.IsNullOrEmpty(name)).Select(name => name!).ToArray()
+                    : []))
+            .Where(p => p.Version.Length > 0)
+            .ToArray();
     }
 
     public async Task<IReadOnlyList<string>?> GetVersionsAsync(string id, CancellationToken ct)
