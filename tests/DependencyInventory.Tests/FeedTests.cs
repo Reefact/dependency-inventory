@@ -388,6 +388,18 @@ public sealed class FeedTests
         Assert.Equal(2, result.NotFound);
     }
 
+    [Theory]
+    [InlineData(0, "Stime.Core.Vnext.Messaging@2.0.4")]
+    [InlineData(1, "Stime.Core.Vnext.Missing")]
+    [InlineData(1, "Stime.Core.Vnext.Messaging@9.9.9")]
+    [InlineData(1, "Stime.Core.Vnext.Broken@1.0.0")]
+    public async Task AnyPackageOrVersionNotFoundOrNotReadFailsTheCommand(int exitCode, string package)
+    {
+        var result = await ReadAsync(["Stime.Core.Vnext.Messaging@2.0.4", package]);
+
+        Assert.Equal(exitCode, result.ExitCode);
+    }
+
     [Fact]
     public async Task ParallelReadsGiveTheSameResult()
     {
@@ -566,20 +578,24 @@ public sealed class FeedTests
     [Fact]
     public async Task TheClientListsThePackageIdsPageByPage()
     {
-        const string api = "https://feeds.dev.azure.com/acme/_apis/packaging/Feeds/feed/packages?protocolType=NuGet&%24top=1000&api-version=7.1&%24skip=";
+        const string api = "https://feeds.dev.azure.com/acme/_apis/packaging/Feeds/feed/packages?protocolType=NuGet&%24top=1000&%24skip=";
         var firstPage = string.Join(",", Enumerable.Range(0, 1000).Select(i => $$"""{"name":"P{{i}}"}"""));
         var (feed, server) = Client(new()
         {
-            [api.Replace("&api-version=7.1&%24skip=", "&%24skip=0&api-version=7.1")] = Ok($$"""{"value":[{{firstPage}}]}"""),
-            [api.Replace("&api-version=7.1&%24skip=", "&%24skip=1000&api-version=7.1")] = Ok("""{"value":[{"name":"Last"}]}""")
+            [api + "0&api-version=7.1"] = Ok($$"""{"value":[{{firstPage}}]}"""),
+            [api + "1000&api-version=7.1"] = Ok("""{"value":[{"name":"Last"}]}"""),
+            // A package whose versions are all prereleases is only listed with isRelease=false.
+            [api + "0&isRelease=false&api-version=7.1"] = Ok("""{"value":[{"name":"P1"},{"name":"Stime.Core.Vnext.Caching"}]}"""),
+            [api + "0&isListed=false&api-version=7.1"] = Ok("""{"value":[]}"""),
+            [api + "0&isRelease=false&isListed=false&api-version=7.1"] = Ok("""{"value":[]}""")
         });
         using (feed)
         {
             var ids = await feed.GetPackageIdsAsync(default);
 
-            Assert.Equal(1001, ids.Count);
-            Assert.Equal("Last", ids[^1]);
-            Assert.Equal(2, server.Requests.Count);
+            Assert.Equal(1002, ids.Count);
+            Assert.Equal(["Last", "Stime.Core.Vnext.Caching"], ids.TakeLast(2));
+            Assert.Equal(5, server.Requests.Count);
         }
     }
 

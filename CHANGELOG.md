@@ -27,7 +27,7 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   from `--versions-from` (a `dependencies.csv`) or from `--pattern` / `--regex` on the feed's packages, with
   `--latest` to keep the highest one. `--dependency-pattern` / `--dependency-regex` filter the dependencies. It writes
   `package-frameworks.csv`, `package-dependencies.csv`, `packages.csv` and `report.json` in the `feed-report` folder;
-  `packages.csv` also gives each version's publication (date, listed, views) and every metadata of its `.nuspec`
+  `packages.csv` also gives each version's publication (date, listed, views) and all metadata fields from its `.nuspec` file
   (authors, description, license, source repository and commit...). The PAT needs the Packaging (Read) scope.
 
 ### Fixed

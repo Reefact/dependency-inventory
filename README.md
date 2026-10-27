@@ -201,7 +201,7 @@ The feed-report folder (configurable with --output) contains:
   Kind: Package, or FrameworkReference (such as Microsoft.AspNetCore.App, whose version is the framework's);
 - packages.csv: one line per package version with everything else known about it: whether it could be read (Status:
   OK, NotFound or Failed, and Details), where its frameworks were read (FrameworksFrom: Nuspec or PackageFolders),
-  its publication in the feed (Published, Listed, Views) and every metadata of its .nuspec (Id, Title, Authors,
+  its publication in the feed (Published, Listed, Views) and all metadata fields from its .nuspec file (Id, Title, Authors,
   Owners, Description, Summary, ReleaseNotes, Copyright, Language, Tags, ProjectUrl, IconUrl, Icon, Readme, License,
   LicenseType, LicenseUrl, RequireLicenseAcceptance, DevelopmentDependency, Serviceable, MinClientVersion,
   PackageTypes, RepositoryType, RepositoryUrl, RepositoryBranch, RepositoryCommit);

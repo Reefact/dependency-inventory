@@ -55,6 +55,10 @@ public sealed record AzureFeed(string Organization, string? Project, string Name
 public sealed class AzureArtifactsFeed : IPackageFeed
 {
     private const int PageSize = 1000;
+
+    // The feed API returns release (isRelease defaults to true) and listed versions only, unless told otherwise.
+    private static readonly string[] PublicationFilters =
+        ["", "&isListed=false", "&isRelease=false", "&isRelease=false&isListed=false"];
     private readonly AzureFeed _feed;
     private readonly HttpClient _http;
     private readonly SemaphoreSlim _indexLock = new(1, 1);
@@ -78,11 +82,21 @@ public sealed class AzureArtifactsFeed : IPackageFeed
 
     public async Task<IReadOnlyList<string>> GetPackageIdsAsync(CancellationToken ct)
     {
+        // The feed API leaves out packages whose versions are all prereleases or delisted, unless asked:
+        // every combination of the two filters is listed and merged.
+        var ids = new List<string>();
+        foreach (var filters in PublicationFilters)
+            ids.AddRange(await GetPackageIdsAsync(filters, ct));
+        return ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private async Task<IReadOnlyList<string>> GetPackageIdsAsync(string filters, CancellationToken ct)
+    {
         var ids = new List<string>();
         for (var skip = 0; ; skip += PageSize)
         {
             using var document = await ReadJsonAsync(
-                $"{_feed.PackagesApiUrl}?protocolType=NuGet&%24top={PageSize}&%24skip={skip}&api-version=7.1", ct)
+                $"{_feed.PackagesApiUrl}?protocolType=NuGet&%24top={PageSize}&%24skip={skip}{filters}&api-version=7.1", ct)
                 ?? throw new HttpRequestException($"Feed not found: {_feed.IndexUrl}");
             var page = document.RootElement.GetProperty("value").EnumerateArray()
                 .Select(p => p.TryGetProperty("name", out var name) ? name.GetString() : null)
@@ -99,7 +113,7 @@ public sealed class AzureArtifactsFeed : IPackageFeed
         // With includeAllVersions, the feed API returns only release (isRelease defaults to true) and listed
         // versions. Every combination of the two filters is requested and merged, whatever their exact meaning.
         var publications = new List<PackagePublication>();
-        foreach (var filters in new[] { "", "&isListed=false", "&isRelease=false", "&isRelease=false&isListed=false" })
+        foreach (var filters in PublicationFilters)
             publications.AddRange(await GetPublicationsAsync(id, filters, ct));
         return publications.DistinctBy(p => p.Version.ToLowerInvariant()).ToArray();
     }
