@@ -50,6 +50,16 @@ public sealed record PackageOccurrence(
     IReadOnlyList<string> MatchedFilters,
     string Url);
 
+/// <summary>One target framework declared by a project or MSBuild file, e.g. net8.0 or net472.</summary>
+public sealed record FrameworkOccurrence(
+    string Project,
+    string Repository,
+    string Branch,
+    string Commit,
+    string File,
+    string Framework,
+    string Url);
+
 public sealed record RepositoryCoverage(
     string Project,
     string Repository,
@@ -64,4 +74,5 @@ public sealed record ScanReport(
     string Origin,
     IReadOnlyList<DependencyFilter> Filters,
     IReadOnlyList<PackageOccurrence> Occurrences,
-    IReadOnlyList<RepositoryCoverage> Coverage);
+    IReadOnlyList<RepositoryCoverage> Coverage,
+    IReadOnlyList<FrameworkOccurrence> Frameworks);

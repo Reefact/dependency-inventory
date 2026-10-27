@@ -127,6 +127,7 @@ The dependency-report folder (configurable with --output) contains:
 
 - dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters;
 - central-versions.csv: central version declarations matching the filters;
+- frameworks.csv: the .NET target frameworks declared by the project files (not filtered by --pattern / --regex);
 - repositories.csv: coverage of every repository found and its scan status;
 - report.json: full JSON report, including the applied filters.
 
@@ -145,6 +146,8 @@ Both providers read files from each repository's selected commit without cloning
 Files: *.csproj, *.fsproj, *.vbproj, *.props, *.targets and packages.config. The bin, obj, node_modules and .git folders are ignored.
 
 PackageReference, GlobalPackageReference and package are direct references; PackageVersion is a central version declaration, not a proof of direct consumption.
+
+Target frameworks are read from TargetFramework, TargetFrameworks and the legacy TargetFrameworkVersion (v4.7.2 is reported as net472) in project, .props and .targets files. Values built from MSBuild properties are skipped and conditions are not evaluated.
 
 The scanner can match a version from the nearest Directory.Packages.props, without fully evaluating MSBuild. It does not resolve transitive dependencies and does not run a NuGet restore.
 

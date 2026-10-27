@@ -9,11 +9,13 @@ public interface IScanProgress
 
 public sealed record RepositoryScanResult(
     RepositoryCoverage Coverage,
-    IReadOnlyList<PackageOccurrence> Occurrences);
+    IReadOnlyList<PackageOccurrence> Occurrences,
+    IReadOnlyList<FrameworkOccurrence> Frameworks);
 
 public sealed record ScanResult(
     IReadOnlyList<PackageOccurrence> Occurrences,
     IReadOnlyList<RepositoryCoverage> Coverage,
+    IReadOnlyList<FrameworkOccurrence> Frameworks,
     IReadOnlyList<RepositoryDiagnostic> Diagnostics)
 {
     /// <summary>Repositories that could not be fully inspected.</summary>
@@ -107,6 +109,7 @@ public static class RepositoryScanner
         return new ScanResult(
             results.SelectMany(x => x.Scan.Occurrences).ToArray(),
             results.Select(x => x.Scan.Coverage).ToArray(),
+            results.SelectMany(x => x.Scan.Frameworks).ToArray(),
             results.Where(x => x.Diagnostic is not null).Select(x => x.Diagnostic!).ToArray());
     }
 
@@ -119,8 +122,10 @@ public static class RepositoryScanner
         int fileParallelism = 1)
     {
         var hits = new List<PackageOccurrence>();
+        var frameworks = new List<FrameworkOccurrence>();
         if (repo.IsDisabled)
-            return new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), hits);
+            return new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"),
+                hits, frameworks);
 
         string? branchName = null;
         int filesRead = 0;
@@ -132,7 +137,8 @@ public static class RepositoryScanner
                 diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
             var branch = BranchSelector.Select(branches);
             if (branch is null)
-                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"), hits);
+                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"),
+                    hits, frameworks);
             branchName = branch.Name;
             if (diagnostic is not null)
             {
@@ -146,6 +152,7 @@ public static class RepositoryScanner
             // Every reference comes from this single commit.
             // Files may be read in parallel; their results are then taken in path order.
             var reads = new FileDiagnostic[paths.Length];
+            var declaredFrameworks = new IReadOnlyList<string>[paths.Length];
             await Parallel.ForEachAsync(Enumerable.Range(0, paths.Length),
                 new ParallelOptions { MaxDegreeOfParallelism = fileParallelism, CancellationToken = ct },
                 async (index, token) =>
@@ -156,6 +163,7 @@ public static class RepositoryScanner
                         var content = await api.GetFileAsync(repo.Id, branch.ObjectId, path, token);
                         reads[index] = new FileDiagnostic(path, content.Length,
                             NuGetDependencyParser.Parse(path, content), null);
+                        declaredFrameworks[index] = NuGetDependencyParser.ParseFrameworks(path, content);
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
                     catch (Exception ex)
@@ -166,13 +174,17 @@ public static class RepositoryScanner
 
             var parsedFiles = new Dictionary<string, IReadOnlyList<ParsedPackage>>(
                 StringComparer.OrdinalIgnoreCase);
-            foreach (var read in reads)
+            for (var index = 0; index < reads.Length; index++)
             {
+                var read = reads[index];
                 diagnostic?.Files.Add(read);
                 if (read.Error is null)
                 {
                     parsedFiles[read.Path] = read.Packages;
                     filesRead++;
+                    frameworks.AddRange(declaredFrameworks[index].Select(framework => new FrameworkOccurrence(
+                        repo.Project, repo.Name, branch.Name, branch.ObjectId, read.Path, framework,
+                        api.FileUrl(repo, branch.ObjectId, read.Path))));
                 }
                 else failures.Add($"{read.Path}: {read.Error}");
             }
@@ -199,12 +211,12 @@ public static class RepositoryScanner
                 : paths.Length == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
             return new(new(repo.Project, repo.Name, branchName, status,
                 filesRead, hits.Count(x => x.Kind == PackageKind.Reference),
-                failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits);
+                failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits, frameworks);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits);
+            return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits, frameworks);
         }
     }
 }
