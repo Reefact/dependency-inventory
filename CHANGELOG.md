@@ -8,6 +8,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+## [1.0.0-preview.4] - 2026-10-27
+
 ### Changed
 
 - **Breaking: the package scan is now the `packages` command (alias `pkg`).** It is no longer the default command:
@@ -87,7 +89,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory --prerelease` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
-[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.3...HEAD
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.4...HEAD
+[1.0.0-preview.4]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.3...v1.0.0-preview.4
 [1.0.0-preview.3]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.2...v1.0.0-preview.3
 [1.0.0-preview.2]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.1...v1.0.0-preview.2
 [1.0.0-preview.1]: https://github.com/Reefact/dependency-inventory/releases/tag/v1.0.0-preview.1
