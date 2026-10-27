@@ -13,6 +13,14 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 - **Breaking: the package scan is now the `packages` command (alias `pkg`).** It is no longer the default command:
   replace `depinv --provider ...` with `depinv packages --provider ...`. The options and reports are unchanged.
 
+### Added
+
+- **`depinv frameworks` (alias `fwk`) lists the target framework of every .NET project**, with no filter. It reads
+  `TargetFramework`, `TargetFrameworks` and the legacy `TargetFrameworkVersion` (`v4.7.2` is written `net472`),
+  falls back to the nearest `Directory.Build.props`, and writes `frameworks.csv`, `repositories.csv` and
+  `report.json` in the `framework-report` folder. Projects whose framework cannot be resolved are listed as
+  `Unresolved`.
+
 ## [1.0.0-preview.3] - 2026-10-26
 
 ### Changed

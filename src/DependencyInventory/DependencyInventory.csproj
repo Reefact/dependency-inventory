@@ -17,7 +17,7 @@
 
     <Authors>Sylvain AURAT</Authors>
     <Copyright>© Sylvain Aurat 2026</Copyright>
-    <Description>depinv inventories the NuGet references declared in the Git repositories of an Azure DevOps project or a GitLab group, and writes CSV and JSON reports.</Description>
+    <Description>depinv inventories the NuGet references and the .NET target frameworks declared in the Git repositories of an Azure DevOps project or a GitLab group, and writes CSV and JSON reports.</Description>
     <PackageTags>nuget;dependencies;inventory;azure-devops;gitlab;dotnet-tool;cli</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

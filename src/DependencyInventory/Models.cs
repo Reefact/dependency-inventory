@@ -33,7 +33,10 @@ public enum PackageKind { Reference, CentralVersion }
 public enum VersionSource { Explicit, Unresolved, Central }
 
 [JsonConverter(typeof(JsonStringEnumConverter<CoverageStatus>))]
-public enum CoverageStatus { OK, Partial, Failed, NoBranch, Disabled, NoNuGetFiles }
+public enum CoverageStatus { OK, Partial, Failed, NoBranch, Disabled, NoNuGetFiles, NoProjectFiles }
+
+[JsonConverter(typeof(JsonStringEnumConverter<FrameworkSource>))]
+public enum FrameworkSource { Project, DirectoryBuildProps, Unresolved }
 
 public sealed record ParsedPackage(string Id, string? Version, PackageKind Kind, VersionSource VersionSource);
 
@@ -65,3 +68,30 @@ public sealed record ScanReport(
     IReadOnlyList<DependencyFilter> Filters,
     IReadOnlyList<PackageOccurrence> Occurrences,
     IReadOnlyList<RepositoryCoverage> Coverage);
+
+/// <summary>One target framework of one project file; no framework when it could not be resolved.</summary>
+public sealed record FrameworkOccurrence(
+    string Project,
+    string Repository,
+    string Branch,
+    string Commit,
+    string ProjectFile,
+    string? Framework,
+    FrameworkSource FrameworkSource,
+    string Url);
+
+/// <summary>Coverage of one repository by the frameworks inventory.</summary>
+public sealed record ProjectCoverage(
+    string Project,
+    string Repository,
+    string? Branch,
+    CoverageStatus Status,
+    int FilesExamined,
+    int Projects,
+    string? Details);
+
+public sealed record FrameworkReport(
+    DateTimeOffset ScannedAt,
+    string Origin,
+    IReadOnlyList<FrameworkOccurrence> Frameworks,
+    IReadOnlyList<ProjectCoverage> Coverage);

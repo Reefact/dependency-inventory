@@ -12,8 +12,9 @@
 ## Repository map
 
 - `src/DependencyInventory/`
-  - `Program.cs`, `DepinvApp.cs`, `ScanCommand.cs`: commands (`packages`, `login`, `logout`), CLI options, prompts, validation and exit codes.
-  - `RepositoryScanner.cs`, `RepositoryDiagnostics.cs`: scan of the repositories, without console access.
+  - `Program.cs`, `DepinvApp.cs`: commands (`packages`, `frameworks`, `login`, `logout`).
+  - `RepositoryCommand.cs`, `PackagesCommand.cs`, `FrameworksCommand.cs`: CLI options, prompts, validation and exit codes; the base class is shared by both inventories.
+  - `RepositoryScanner.cs`, `FrameworkScanner.cs`, `RepositoryDiagnostics.cs`: scan of the repositories, without console access; `RepositoryWalker` is the walk both inventories share.
   - `ScanConsole.cs`: console output (header, messages, progress bar, summary).
   - `RepositoryProviders.cs`, `AzureDevOpsClient.cs`, `GitLabRepositoryProvider.cs`: Git hosting APIs.
   - `RetryHandler.cs`: HTTP pipeline shared by both clients (retry on transient failures, per-attempt timeout).
@@ -21,6 +22,7 @@
   - `CredentialsFile.cs`: credentials file reading (Linux and macOS only, until their vaults are supported).
   - `BranchSelector.cs`: the one branch scanned per repository.
   - `NuGetDependencyParser.cs`: NuGet references extracted from project files.
+  - `FrameworkParser.cs`: target frameworks declared by project files and Directory.Build.props.
   - `DependencyMatcher.cs`: `--pattern` / `--regex` filters.
   - `ReportWriter.cs`, `Models.cs`: reports and their data.
 - `tests/DependencyInventory.Tests/`: unit tests; `FakeRepositoryProvider` serves repositories from memory.
@@ -33,7 +35,7 @@
 ## Rules
 
 - **Commits** follow Conventional Commits 1.0.0 and are written in English. `tools/commit-lint/lint-commit-message.sh` checks them, in CI on every pull request and locally once the hook is enabled with `git config core.hooksPath .githooks`.
-- **Reports are a contract.** `dependencies.csv`, `central-versions.csv`, `repositories.csv`, `report.json` and `diagnostics.json` must not change unless the change is intended. Enum names (`PackageKind`, `VersionSource`, `CoverageStatus`) are written as-is in them: renaming a member changes the output.
+- **Reports are a contract.** `dependencies.csv`, `central-versions.csv`, `frameworks.csv`, `repositories.csv`, `report.json` and `diagnostics.json` must not change unless the change is intended. Enum names (`PackageKind`, `VersionSource`, `CoverageStatus`, `FrameworkSource`) are written as-is in them: renaming a member changes the output.
 - **Read-only.** The tool never writes to Azure DevOps or GitLab: GET requests only.
 - **Secrets** (PAT, login) are never logged nor serialized.
 - **Tests and warnings.** Every behavior change comes with a test. The build treats warnings as errors.
