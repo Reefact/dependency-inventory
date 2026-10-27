@@ -18,6 +18,19 @@ public sealed class DepinvAppTests
         Assert.Equal(2, exitCode);
     }
 
+    // Spectre rejects an unknown option before the command runs, with neither 0 nor the command's 2.
+    [Theory]
+    [InlineData("packages", "--patern")]
+    [InlineData("frameworks", "--pattern")]
+    public async Task AnUnknownOptionIsRejected(string command, string option)
+    {
+        var exitCode = await DepinvApp.Create().RunAsync(
+            [command, "--provider", "azure", "--url", "https://example.com/not-azure", option, "A"]);
+
+        Assert.NotEqual(0, exitCode);
+        Assert.NotEqual(2, exitCode);
+    }
+
     [Fact]
     public async Task ThePackageScanIsNoLongerTheDefaultCommand()
     {

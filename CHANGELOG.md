@@ -12,6 +12,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 - **Breaking: the package scan is now the `packages` command (alias `pkg`).** It is no longer the default command:
   replace `depinv --provider ...` with `depinv packages --provider ...`. The options and reports are unchanged.
+- **Breaking: an unknown option is now an error.** A misspelled option, such as `--patern`, used to be silently
+  ignored; the command now stops with an error naming it.
 
 ### Added
 
