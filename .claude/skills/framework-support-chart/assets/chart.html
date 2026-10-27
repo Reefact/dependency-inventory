@@ -1,0 +1,293 @@
+<title>__PAGE_TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one horizontal bar chart, a band per package, shared x scale and grid. */
+:root {
+  --page: #F6F8FB;
+  --band: #FFFFFF;
+  --band-alt: #F3F6FA;
+  --ink: #1B2638;
+  --ink-2: #4A5568;
+  --ink-3: #7B8798;
+  --eyebrow: #3B6BC4;
+  --pill: #E8EEF6;
+  --grid: #E3E8EF;
+  --axis: #C9D1DC;
+  --unsupported: #E5202E;
+  --ending: #F08A00;
+  --s0: #4169CC; --s1: #17979B; --s2: #7B66C9; --s3: #B87444;
+  --s4: #23876C; --s5: #A26BB8; --s6: #6481B6; --s-other: #7A8697;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --label-w: 208px;
+  --value-w: 40px;
+  --lib-pad: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0F141C; --band: #151B25; --band-alt: #121821;
+    --ink: #E8EDF4; --ink-2: #B4BFCD; --ink-3: #8592A3; --eyebrow: #7FA6F0;
+    --pill: #1E2633; --grid: #232C39; --axis: #364152;
+    --unsupported: #FF4A55; --ending: #FFA329;
+    --s0: #6A8FE6; --s1: #2BB3B7; --s2: #9B88E0; --s3: #D18F5E;
+    --s4: #3BAA8B; --s5: #BF8AD3; --s6: #8AA3D0; --s-other: #8E9AAB;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0F141C; --band: #151B25; --band-alt: #121821;
+  --ink: #E8EDF4; --ink-2: #B4BFCD; --ink-3: #8592A3; --eyebrow: #7FA6F0;
+  --pill: #1E2633; --grid: #232C39; --axis: #364152;
+  --unsupported: #FF4A55; --ending: #FFA329;
+  --s0: #6A8FE6; --s1: #2BB3B7; --s2: #9B88E0; --s3: #D18F5E;
+  --s4: #3BAA8B; --s5: #BF8AD3; --s6: #8AA3D0; --s-other: #8E9AAB;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding-block: 40px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.eyebrow {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--eyebrow); margin: 0 0 6px;
+}
+h1 { font-size: 19px; font-weight: 700; margin: 0 0 28px; text-wrap: balance; }
+
+.chart { position: relative; }
+.grid {
+  position: absolute; top: 0; bottom: 0;
+  left: calc(var(--label-w) + 6px + var(--lib-pad));
+  right: calc(var(--value-w) + var(--lib-pad));
+  pointer-events: none; z-index: 1;
+}
+.grid span { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+.grid span:first-child { background: var(--axis); }
+
+.lib { position: relative; padding: 8px var(--lib-pad) 12px; }
+.lib:nth-child(odd of .lib) { background: var(--band-alt); }
+.lib:nth-child(even of .lib) { background: var(--band); }
+.lib-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 2px 0 6px; position: relative; z-index: 2;
+}
+.lib-name { font-weight: 600; font-size: 12.5px; border-left: 3px solid var(--c); padding-left: 6px; }
+.lib-count {
+  font-size: 10.5px; font-weight: 500; color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  border-radius: 999px; padding: 2px 8px;
+}
+
+.row {
+  display: grid; grid-template-columns: var(--label-w) 1fr; gap: 6px;
+  align-items: center; height: 28px; position: relative; z-index: 2;
+}
+.label {
+  background: var(--pill); border-radius: 3px; padding: 4px 8px;
+  font-size: 11.5px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.fw { font-weight: 500; color: var(--ink-3); }
+.fw.unsupported { color: var(--unsupported); font-weight: 600; }
+.fw.ending { color: var(--ending); font-weight: 600; }
+.track { position: relative; height: 19px; margin-right: var(--value-w); min-width: 0; }
+.bar {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--c); border-radius: 0 3px 3px 0; outline: none;
+}
+.bar.unsupported, .swatch.unsupported {
+  background: repeating-linear-gradient(135deg, var(--unsupported) 0 3px, transparent 3px 8px), var(--c);
+  box-shadow: inset 0 0 0 1.5px var(--unsupported);
+}
+.bar.ending, .swatch.ending {
+  background: repeating-linear-gradient(135deg, var(--ending) 0 3px, transparent 3px 8px), var(--c);
+  box-shadow: inset 0 0 0 1.5px var(--ending);
+}
+.bar:hover, .bar:focus-visible { filter: brightness(1.08); }
+.bar:focus-visible { box-shadow: 0 0 0 2px var(--ink); }
+.value {
+  position: absolute; top: 50%; transform: translateY(-50%); margin-left: 8px;
+  font-size: 11px; font-weight: 500; color: var(--ink); white-space: nowrap;
+}
+
+.axis {
+  position: relative;
+  margin-left: calc(var(--label-w) + 6px + var(--lib-pad));
+  margin-right: calc(var(--value-w) + var(--lib-pad));
+  height: 22px; margin-top: 8px;
+}
+.axis span { position: absolute; transform: translateX(-50%); font-size: 10.5px; color: var(--ink-3); }
+.axis-title {
+  text-align: center; font-size: 12px; font-weight: 500; color: var(--ink-2);
+  margin: 6px 0 20px; padding-left: calc(var(--label-w) + 6px);
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 0 0 14px; }
+.legend-item { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); max-width: 46ch; }
+.swatch { --c: var(--s-other); flex: none; width: 34px; height: 14px; border-radius: 0 3px 3px 0; background: var(--c); }
+.legend b { color: var(--ink); }
+.legend b.unsupported { color: var(--unsupported); }
+.legend b.ending { color: var(--ending); }
+
+.foot { font-size: 10.5px; color: var(--ink-3); margin: 0 0 4px; }
+
+details { margin-top: 18px; font-size: 12px; color: var(--ink-2); }
+summary { cursor: pointer; }
+summary:focus-visible { outline: 2px solid var(--eyebrow); outline-offset: 2px; }
+.table-wrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; min-width: 520px; }
+th, td { text-align: left; padding: 4px 12px 4px 0; border-bottom: 1px solid var(--grid); }
+th { font-weight: 600; color: var(--ink); }
+td.num { text-align: right; }
+
+.tip {
+  position: fixed; z-index: 20; pointer-events: none;
+  background: var(--ink); color: var(--page);
+  font-size: 11.5px; line-height: 1.45; padding: 7px 10px; border-radius: 4px; max-width: 280px;
+}
+
+@media (max-width: 640px) {
+  :root { --label-w: 150px; --value-w: 28px; --lib-pad: 6px; }
+  .label { font-size: 10.5px; padding: 4px 6px; }
+}
+</style>
+
+<div class="page">
+  <p class="eyebrow" id="eyebrow"></p>
+  <h1 id="title"></h1>
+
+  <div class="chart" id="chart">
+    <div class="grid" id="grid" aria-hidden="true"></div>
+  </div>
+  <div class="axis" id="axis" aria-hidden="true"></div>
+  <p class="axis-title" id="axis-title"></p>
+
+  <div class="legend" id="legend"></div>
+  <div id="foot"></div>
+
+  <details>
+    <summary id="table-summary"></summary>
+    <div class="table-wrap"><table id="table"></table></div>
+  </details>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+// Written by scripts/build_chart.py: packages, versions, frameworks with their support status, and texts.
+const DATA = __CHART_DATA__;
+
+const T = DATA.text;
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+};
+document.getElementById("eyebrow").textContent = DATA.eyebrow;
+document.getElementById("eyebrow").hidden = !DATA.eyebrow;
+document.getElementById("title").textContent = DATA.title;
+document.getElementById("axis-title").textContent = T.axis;
+document.getElementById("table-summary").textContent = T.tableSummary;
+
+// A round axis end just past the longest bar, with about five ticks.
+const maxCount = Math.max(1, ...DATA.packages.flatMap(p => p.versions.map(v => v.count)));
+const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000].find(s => maxCount / s <= 5) || Math.ceil(maxCount / 5);
+const MAX = maxCount + Math.max(1, Math.round(maxCount * 0.08));
+const ticks = [];
+for (let t = 0; t <= MAX; t += step) ticks.push(t);
+const pct = v => (v / MAX * 100) + "%";
+
+const grid = document.getElementById("grid");
+const axis = document.getElementById("axis");
+ticks.forEach(t => {
+  const line = el("span"); line.style.left = pct(t); grid.appendChild(line);
+  const label = el("span", null, String(t)); label.style.left = pct(t); axis.appendChild(label);
+});
+
+const tip = document.getElementById("tip");
+function showTip(e, lines) {
+  tip.replaceChildren(...lines.flatMap((line, i) => i === 0 ? [el("b", null, line)] : [el("br"), document.createTextNode(line)]));
+  tip.hidden = false;
+  const r = e.currentTarget.getBoundingClientRect();
+  const x = e.clientX ?? (r.left + r.width / 2), y = e.clientY ?? r.top;
+  tip.style.left = Math.max(8, Math.min(window.innerWidth - tip.offsetWidth - 8, x + 12)) + "px";
+  tip.style.top = Math.max(8, y - tip.offsetHeight - 12) + "px";
+}
+const hideTip = () => { tip.hidden = true; };
+
+const table = document.getElementById("table");
+const head = el("tr");
+T.tableColumns.forEach(c => head.appendChild(el("th", null, c)));
+table.appendChild(el("thead")).appendChild(head);
+const tbody = table.appendChild(el("tbody"));
+
+const chart = document.getElementById("chart");
+DATA.packages.forEach(pkg => {
+  const section = el("section", "lib");
+  section.style.setProperty("--c", `var(${pkg.color})`);
+  section.setAttribute("aria-label", pkg.name);
+  const header = el("div", "lib-head");
+  header.append(el("span", "lib-name", pkg.name), el("span", "lib-count", pkg.countLabel));
+  section.appendChild(header);
+
+  pkg.versions.forEach(v => {
+    const row = el("div", "row");
+    const label = el("div", "label");
+    label.append(document.createTextNode(v.version + " "));
+    const fw = el("span", "fw " + v.status);
+    fw.append("(");
+    v.frameworks.forEach((f, i) => {
+      if (i > 0) fw.append(", ");
+      fw.appendChild(el("span", "fw " + f.status, f.name));
+    });
+    fw.append(")");
+    label.appendChild(fw);
+
+    const track = el("div", "track");
+    const bar = el("div", "bar " + v.status);
+    bar.style.width = pct(v.count);
+    bar.tabIndex = 0;
+    const lines = [pkg.name, `${v.version} · ${v.frameworks.map(f => f.name).join(", ")}`, v.countLabel, ...v.notes];
+    bar.setAttribute("aria-label", lines.join(", "));
+    bar.addEventListener("mousemove", e => showTip(e, lines));
+    bar.addEventListener("mouseleave", hideTip);
+    bar.addEventListener("focus", e => showTip(e, lines));
+    bar.addEventListener("blur", hideTip);
+    const value = el("span", "value", String(v.count));
+    value.style.left = pct(v.count);
+    track.append(bar, value);
+    row.append(label, track);
+    section.appendChild(row);
+
+    const tr = el("tr");
+    [pkg.name, v.version, v.frameworks.map(f => f.name).join(", "), v.notes.join(" ; ")].forEach(t => tr.appendChild(el("td", null, t)));
+    tr.appendChild(el("td", "num", String(v.count)));
+    tbody.appendChild(tr);
+  });
+  chart.appendChild(section);
+});
+
+const legend = document.getElementById("legend");
+DATA.legend.forEach(item => {
+  const entry = el("div", "legend-item");
+  const text = el("span");
+  text.append(el("b", item.status, item.title), document.createTextNode(T.colon + item.text));
+  entry.append(el("span", "swatch " + item.status), text);
+  legend.appendChild(entry);
+});
+
+const foot = document.getElementById("foot");
+DATA.footer.forEach(line => foot.appendChild(el("p", "foot", line)));
+</script>
