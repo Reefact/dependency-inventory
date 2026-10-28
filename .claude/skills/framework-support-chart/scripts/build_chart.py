@@ -221,8 +221,8 @@ SEVERITY = {"unsupported": 0, "ending": 1, "unknown": 2, "supported": 3}
 
 def usage_kind(value: str | None) -> str:
     """The part of the bar a reference falls in. BuildOnly is used: such a package acts on the build without being
-    referenced by the code, it cannot be removed."""
-    return {"Used": "used", "BuildOnly": "used", "Unused": "unused"}.get((value or "").strip(), "undetermined")
+    referenced by the code, it cannot be removed. UsedTransitively is used too: the code uses a package it brings."""
+    return {"Used": "used", "BuildOnly": "used", "UsedTransitively": "used", "Unused": "unused"}.get((value or "").strip(), "undetermined")
 
 
 def usage_fields(counts: dict[str, int], total: int, text: dict) -> dict:

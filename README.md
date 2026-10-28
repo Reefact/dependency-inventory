@@ -156,6 +156,11 @@ no build, so it works on solutions that need manual steps to compile. The Usage 
 - BuildOnly: the package acts on the build without being referenced in code: analyzers, source generators, packages
   with build, tool or content assets only, development dependencies, test adapters (xunit.runner.visualstudio,
   Microsoft.NET.Test.Sdk...). It is never reported unused;
+- UsedTransitively: with --transitive, no type of the package is referenced, but it brings a package that the code of
+  the project uses without declaring it: removing the reference would break the build. Only the transitive packages
+  matching --pattern or --regex are known; without --transitive, or when the package the code uses does not match the
+  filters, the reference stays Unused. diagnostics.json names the packages it brings. Check by building before
+  removing an Unused reference;
 - Undetermined: the usage could not be computed, e.g. the package was found in no source, the version is an MSBuild
   property, the project is in VB or F#, or a source file could not be read. --diagnostics gives the reason.
 
