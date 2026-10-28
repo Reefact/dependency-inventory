@@ -78,11 +78,11 @@ public sealed record ScanParallelism
 internal sealed record FileRead<T>(string Path, int? ContentLength, T? Parsed, string? Error);
 
 /// <summary>
-/// What could be read in one repository; no branch means the repository has none. The tree lists every file of
-/// the commit, read or not.
+/// What could be read in one repository; no branch means none of the requested ones exists, for the reason given.
+/// The tree lists every file of the commit, read or not.
 /// </summary>
 internal sealed record RepositoryRead<T>(GitBranch? Branch, IReadOnlyList<FileRead<T>> Files,
-    IReadOnlyList<string>? Tree = null);
+    IReadOnlyList<string>? Tree = null, string? NoBranchReason = null);
 
 /// <summary>
 /// The walk shared by every inventory: selected branch, tree of its commit, files read (possibly in parallel)
@@ -112,23 +112,35 @@ internal static class RepositoryWalker
     }
 
     /// <summary>
-    /// Reads and parses the files of the selected branch that <paramref name="isInteresting"/> keeps. A file that
-    /// cannot be read or parsed is returned with its error; a branch or tree failure is thrown.
-    /// <paramref name="branchesListed"/> is called as soon as the branch is selected, before the tree is read.
+    /// Reads and parses the files of the branch selected by <paramref name="branchPolicy"/> that
+    /// <paramref name="isInteresting"/> keeps. A file that cannot be read or parsed is returned with its error; a
+    /// branch or tree failure is thrown. <paramref name="branchesListed"/> is called as soon as the branch is
+    /// selected, before the tree is read.
     /// </summary>
     public static async Task<RepositoryRead<T>> ReadAsync<T>(IRepositoryProvider api, Repository repo,
-        Func<string, bool> isInteresting, Func<string, string, T> parse,
+        BranchPolicy branchPolicy, Func<string, bool> isInteresting, Func<string, string, T> parse,
         Action<IReadOnlyList<GitBranch>, GitBranch?> branchesListed, int fileParallelism, CancellationToken ct)
     {
         var branches = await api.GetBranchesAsync(repo.Id, ct);
-        var branch = BranchSelector.Select(branches);
+        var (requested, section) = branchPolicy.For(repo.Name);
+        var branch = BranchSelector.Select(branches, requested, repo.DefaultBranch);
         branchesListed(branches, branch);
-        if (branch is null) return new(null, []);
+        if (branch is null) return new(null, [], null, NoBranchReason(branches, requested, section, repo));
 
         var tree = (await api.GetTreeAsync(repo.Id, branch.ObjectId, ct)).Where(x => !x.IsFolder)
             .Select(x => x.Path).ToArray();
         var paths = tree.Where(isInteresting).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
         return new(branch, await ReadFilesAsync(api, repo, branch.ObjectId, paths, parse, fileParallelism, ct), tree);
+    }
+
+    private static string NoBranchReason(IReadOnlyList<GitBranch> branches, IReadOnlyList<string>? requested,
+        string? section, Repository repo)
+    {
+        if (branches.Count == 0) return "No Git branch";
+        if (requested is null)
+            return repo.DefaultBranch is null ? "No default branch" : $"Default branch not found: {repo.DefaultBranch}";
+        return $"None of the requested branches exists: {string.Join(", ", requested)}" +
+            (section is null ? "" : $" (section [{section}])");
     }
 
     /// <summary>
@@ -180,7 +192,7 @@ public static class RepositoryScanner
     public static async Task<ScanResult> ScanAsync(IRepositoryProvider api,
         IReadOnlyList<Repository> repositories, DependencyMatcher matcher, bool collectDiagnostics,
         ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct,
-        PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null)
+        PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null, BranchPolicy? branches = null)
     {
         var results = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
             async (repo, fileDegree, token) =>
@@ -189,7 +201,7 @@ public static class RepositoryScanner
                     ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
                     : null;
                 var scan = await ScanRepositoryAsync(api, repo, matcher, diagnostic, token, fileDegree, usage,
-                    transitive);
+                    transitive, branches);
                 return (Scan: scan, Diagnostic: diagnostic);
             }, ct);
 
@@ -206,7 +218,8 @@ public static class RepositoryScanner
     /// </summary>
     public static async Task<RepositoryScanResult> ScanRepositoryAsync(IRepositoryProvider api,
         Repository repo, DependencyMatcher matcher, RepositoryDiagnostic? diagnostic, CancellationToken ct,
-        int fileParallelism = 1, PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null)
+        int fileParallelism = 1, PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null,
+        BranchPolicy? branches = null)
     {
         IReadOnlyList<PackageOccurrence> hits = [];
         IReadOnlyList<TransitiveDependency> transitiveDependencies = [];
@@ -218,7 +231,8 @@ public static class RepositoryScanner
         var failures = new List<string>();
         try
         {
-            var read = await RepositoryWalker.ReadAsync(api, repo, NuGetDependencyParser.IsInterestingFile,
+            var read = await RepositoryWalker.ReadAsync(api, repo, branches ?? BranchPolicy.RepositoryDefault,
+                NuGetDependencyParser.IsInterestingFile,
                 MsBuildFile.Parse,
                 (branches, selected) =>
                 {
@@ -229,7 +243,7 @@ public static class RepositoryScanner
                     diagnostic.Commit = selected?.ObjectId;
                 }, fileParallelism, ct);
             if (read.Branch is not { } branch)
-                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"), hits);
+                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, read.NoBranchReason), hits);
 
             // Git paths are case-sensitive: two paths differing only by case are two files.
             var msbuildFiles = new Dictionary<string, MsBuildFile>(StringComparer.Ordinal);

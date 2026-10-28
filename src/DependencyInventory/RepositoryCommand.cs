@@ -28,6 +28,16 @@ public abstract class RepositorySettings : OriginSettings
     [Description("Scan a single repository (useful to diagnose a missing result).")]
     public string? Repository { get; init; }
 
+    [CommandOption("--branch <NAME>")]
+    [Description("Branch to scan, repeatable in priority order: a name, a glob such as release/*, or @default for " +
+        "the repository's default branch. The first that exists is scanned; the default branch without this option.")]
+    public string[]? Branches { get; init; }
+
+    [CommandOption("--branch-file <PATH>")]
+    [Description("File listing the branches to scan, one per line in priority order; [[repository]] sections give " +
+        "repositories their own list.")]
+    public string? BranchFile { get; init; }
+
     [CommandOption("--diagnostics")]
     [Description("Export the branches and what was read in every file to diagnostics.json.")]
     public bool Diagnostics { get; init; }
@@ -58,9 +68,12 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
     protected virtual Task<int> AuthenticateAsync(TSettings settings, string url, RepositoryCredentials credentials,
         CancellationToken cancellationToken) => Task.FromResult(0);
 
-    /// <summary>Scans the selected repositories, writes the reports and returns the exit code.</summary>
+    /// <summary>
+    /// Scans the selected repositories on the branches of <paramref name="branches"/>, writes the reports and
+    /// returns the exit code.
+    /// </summary>
     protected abstract Task<int> InventoryAsync(IRepositoryProvider api, IReadOnlyList<Repository> repositories,
-        ScanParallelism parallelism, TSettings settings, CancellationToken cancellationToken);
+        BranchPolicy branches, ScanParallelism parallelism, TSettings settings, CancellationToken cancellationToken);
 
     public override async Task<int> ExecuteAsync(
         CommandContext context, TSettings settings, CancellationToken cancellationToken)
@@ -76,6 +89,15 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
         }
 
         if (!Prepare(settings, url)) return 2;
+
+        BranchPolicy branches;
+        try { branches = BranchPolicy.FromOptions(settings.Branches, settings.BranchFile); }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or
+            UnauthorizedAccessException)
+        {
+            ScanConsole.Error(ex.Message);
+            return 2;
+        }
 
         ScanParallelism parallelism;
         try { parallelism = ScanParallelism.Create(settings.Parallelism, settings.ParallelismMode); }
@@ -103,7 +125,9 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
             }
 
             ScanConsole.Source(api.Origin, repositories.Count, selectedRepositories.Count);
-            return await InventoryAsync(api, selectedRepositories, parallelism, settings, cancellationToken);
+            ScanConsole.Branches(branches);
+            return await InventoryAsync(api, selectedRepositories, branches, parallelism, settings,
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

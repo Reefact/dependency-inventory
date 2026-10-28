@@ -15,12 +15,12 @@ public sealed class FrameworksSettings : RepositorySettings
 public sealed class FrameworksCommand : RepositoryCommand<FrameworksSettings>
 {
     protected override async Task<int> InventoryAsync(IRepositoryProvider api,
-        IReadOnlyList<Repository> repositories, ScanParallelism parallelism, FrameworksSettings settings,
-        CancellationToken cancellationToken)
+        IReadOnlyList<Repository> repositories, BranchPolicy branches, ScanParallelism parallelism,
+        FrameworksSettings settings, CancellationToken cancellationToken)
     {
         var result = await ScanConsole.WithProgressAsync(repositories.Count, progress =>
             FrameworkScanner.ScanAsync(api, repositories, settings.Diagnostics,
-                parallelism, progress, cancellationToken));
+                parallelism, progress, cancellationToken, branches));
 
         var report = new FrameworkReport(DateTimeOffset.UtcNow, api.Origin, result.Frameworks, result.Coverage);
         var paths = await ReportWriter.SaveFrameworksAsync(report, settings.Output, cancellationToken);

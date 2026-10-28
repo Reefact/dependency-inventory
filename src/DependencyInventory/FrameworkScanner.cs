@@ -23,7 +23,7 @@ public static class FrameworkScanner
     /// </summary>
     public static async Task<FrameworkScanResult> ScanAsync(IRepositoryProvider api,
         IReadOnlyList<Repository> repositories, bool collectDiagnostics,
-        ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct)
+        ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct, BranchPolicy? branches = null)
     {
         var results = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
             async (repo, fileDegree, token) =>
@@ -31,7 +31,7 @@ public static class FrameworkScanner
                 var diagnostic = collectDiagnostics
                     ? new FrameworkRepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
                     : null;
-                var scan = await ScanRepositoryAsync(api, repo, diagnostic, token, fileDegree);
+                var scan = await ScanRepositoryAsync(api, repo, diagnostic, token, fileDegree, branches);
                 return (Scan: scan, Diagnostic: diagnostic);
             }, ct);
 
@@ -46,7 +46,8 @@ public static class FrameworkScanner
     /// Failures are reported in the coverage, never thrown, except cancellation.
     /// </summary>
     public static async Task<FrameworkRepositoryResult> ScanRepositoryAsync(IRepositoryProvider api,
-        Repository repo, FrameworkRepositoryDiagnostic? diagnostic, CancellationToken ct, int fileParallelism = 1)
+        Repository repo, FrameworkRepositoryDiagnostic? diagnostic, CancellationToken ct, int fileParallelism = 1,
+        BranchPolicy? branches = null)
     {
         var frameworks = new List<FrameworkOccurrence>();
         if (repo.IsDisabled)
@@ -58,7 +59,8 @@ public static class FrameworkScanner
         var failures = new List<string>();
         try
         {
-            var read = await RepositoryWalker.ReadAsync(api, repo, FrameworkParser.IsInterestingFile,
+            var read = await RepositoryWalker.ReadAsync(api, repo, branches ?? BranchPolicy.RepositoryDefault,
+                FrameworkParser.IsInterestingFile,
                 FrameworkParser.Parse,
                 (branches, selected) =>
                 {
@@ -69,7 +71,7 @@ public static class FrameworkScanner
                     diagnostic.Commit = selected?.ObjectId;
                 }, fileParallelism, ct);
             if (read.Branch is not { } branch)
-                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, "No Git branch"),
+                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, read.NoBranchReason),
                     frameworks);
 
             // Unreadable files are kept as null, so that a project never falls back to a farther

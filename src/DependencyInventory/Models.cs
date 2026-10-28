@@ -22,7 +22,9 @@ public sealed record AzureOrigin(string Organization, string Project)
     }
 }
 
-public sealed record Repository(string Id, string Name, string Project, string WebUrl, bool IsDisabled);
+/// <summary>A Git repository; <paramref name="DefaultBranch"/> is the branch name, without refs/heads/.</summary>
+public sealed record Repository(string Id, string Name, string Project, string WebUrl, bool IsDisabled,
+    string? DefaultBranch = null);
 public sealed record GitBranch(string Name, string ObjectId);
 public sealed record GitFile(string Path, bool IsFolder);
 // Enum names are written as-is in the CSV and JSON reports: renaming a member changes the output format.

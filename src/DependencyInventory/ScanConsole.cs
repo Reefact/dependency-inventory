@@ -33,6 +33,9 @@ public static class ScanConsole
         AnsiConsole.MarkupLine($"Source: [blue]{Markup.Escape(origin)}[/] — " +
             $"{accessible} accessible repositories, {selected} to scan.");
 
+    public static void Branches(BranchPolicy branches) =>
+        AnsiConsole.MarkupLine("Branches: " + Markup.Escape(branches.Describe()));
+
     public static void OrganizationCredentials(string organization) =>
         AnsiConsole.MarkupLine($"Credentials for the feeds of the Azure DevOps organization [blue]{Markup.Escape(organization)}[/]:");
 

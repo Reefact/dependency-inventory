@@ -47,6 +47,18 @@ public sealed class DepinvAppTests
         Assert.Equal(2, await DepinvApp.Create().RunAsync(["feed", .. arguments]));
     }
 
+    // Invalid branch options stop both repository inventories with 2 before any credential or network access.
+    [Theory]
+    [InlineData("packages", "--pattern", "A", "--branch", "main", "--branch-file", "branches.txt")]
+    [InlineData("packages", "--pattern", "A", "--branch-file", "missing-branches.txt")]
+    [InlineData("frameworks", "--branch", "main", "--branch-file", "branches.txt")]
+    [InlineData("frameworks", "--branch-file", "missing-branches.txt")]
+    public async Task InvalidBranchOptionsAreRejected(params string[] arguments)
+    {
+        Assert.Equal(2, await DepinvApp.Create().RunAsync(
+            [arguments[0], "--provider", "azure", "--url", "https://dev.azure.com/acme/project", .. arguments[1..]]));
+    }
+
     // Invalid package sources stop the package scan with 2 before any credential or network access.
     [Theory]
     [InlineData("--provider", "azure", "--url", "https://dev.azure.com/acme/project", "--pattern", "A", "--no-nuget-org")]

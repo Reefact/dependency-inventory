@@ -5,33 +5,6 @@ namespace DependencyInventory.Tests;
 
 public sealed class ScanTests
 {
-    [Theory]
-    [InlineData("main", "release,dev,main,develop")]
-    [InlineData("release", "develop,release,dev")]
-    [InlineData("develop", "dev,develop,feature/z")]
-    [InlineData("dev", "feature/z,dev,feature/a")]
-    public void BranchSelectorPicksPriority(string expected, string namesCsv)
-    {
-        var branches = namesCsv.Split(',').Select(name => new GitBranch(name, "aaaa"));
-        Assert.Equal(expected, BranchSelector.Select(branches)?.Name);
-    }
-
-    [Fact]
-    public void ReleasePrefixBeatsDevelop()
-    {
-        var names = new[] { "feature/x", "develop", "release/2.0" };
-        Assert.Equal("release/2.0", BranchSelector.Select(
-            names.Select(x => new GitBranch(x, "aaaa")))?.Name);
-    }
-
-    [Fact]
-    public void ArbitraryFallbackIsDeterministic()
-    {
-        var names = new[] { "feature/z", "feature/a" };
-        Assert.Equal("feature/a", BranchSelector.Select(
-            names.Select(x => new GitBranch(x, "aaaa")))?.Name);
-    }
-
     [Fact]
     public void ParserExtractsAllPackagesAndDistinguishesCentralDeclarations()
     {

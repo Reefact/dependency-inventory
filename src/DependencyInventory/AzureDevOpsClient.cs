@@ -29,9 +29,17 @@ public sealed class AzureDevOpsClient : IDisposable
                 Get(r, "id"), Get(r, "name"),
                 Get(r.GetProperty("project"), "name"),
                 Get(r, "webUrl"),
-                r.TryGetProperty("isDisabled", out var d) && d.ValueKind == JsonValueKind.True))
+                r.TryGetProperty("isDisabled", out var d) && d.ValueKind == JsonValueKind.True,
+                DefaultBranch(r)))
             .ToArray();
     }
+
+    /// <summary>The default branch of a listed repository, without refs/heads/; none for an empty repository.</summary>
+    public static string? DefaultBranch(JsonElement repository) =>
+        repository.TryGetProperty("defaultBranch", out var value) && value.ValueKind == JsonValueKind.String &&
+        value.GetString() is { Length: > 0 } name
+            ? name.StartsWith("refs/heads/", StringComparison.OrdinalIgnoreCase) ? name[11..] : name
+            : null;
 
     public async Task<IReadOnlyList<GitBranch>> GetBranchesAsync(string repoId, CancellationToken ct)
     {
