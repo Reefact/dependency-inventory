@@ -66,15 +66,40 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                     var matched = matcher.Match(package.Id);
                     if (matched.Count == 0) continue;
                     rows.Add(new TransitiveDependency(repo.Project, repo.Name, branch.Name, branch.ObjectId, project,
-                        graph.Framework, package.Id, package.Version, package.Via, graph.Resolution, matched));
+                        graph.Framework, package.Id, package.Version, package.Via, graph.Resolution, matched,
+                        Roots: package.Roots));
                 }
             }
         }
         return rows;
     }
 
-    /// <summary>A package reached transitively, at its resolved version.</summary>
-    internal sealed record Reached(string Id, string Version, string Via);
+    /// <summary>
+    /// A package reached transitively, at its resolved version; Roots are all the declared references (and, in a lock
+    /// file, referenced projects) through which it is reached, Via only the shortest path.
+    /// </summary>
+    internal sealed record Reached(string Id, string Version, string Via, IReadOnlyList<string> Roots);
+
+    /// <summary>For every package reachable from the roots, the roots it is reachable from, in the roots' order.</summary>
+    internal static Dictionary<string, List<string>> RootsOf(IEnumerable<string> roots,
+        Func<string, IEnumerable<string>> children)
+    {
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var root in roots.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var seen = new HashSet<string>([root], StringComparer.OrdinalIgnoreCase);
+            var queue = new Queue<string>([root]);
+            while (queue.TryDequeue(out var id))
+                foreach (var child in children(id))
+                    if (seen.Add(child))
+                    {
+                        if (!result.TryGetValue(child, out var list)) result[child] = list = [];
+                        list.Add(root);
+                        queue.Enqueue(child);
+                    }
+        }
+        return result;
+    }
 
     /// <summary>The transitive packages of a project for one framework, and the branches that could not be followed.</summary>
     internal sealed record Graph(
@@ -189,6 +214,7 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
             // Walks the graph with the versions chosen so far, collecting every range asked for each package.
             var asked = new Dictionary<string, (string Id, List<VersionRange> Ranges, string Via)>(
                 StringComparer.OrdinalIgnoreCase);
+            var edges = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             var frontier = roots;
             var visited = new HashSet<string>(declaredIds, StringComparer.OrdinalIgnoreCase);
             for (var depth = 1; depth <= MaxDepth && frontier.Count > 0; depth++)
@@ -198,6 +224,9 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                 foreach (var dependency in PackageUsageAnalyzer.Dependencies(node.Package.Dependencies,
                              node.Package.DependencyGroups, frameworks))
                 {
+                    if (!edges.TryGetValue(node.Id, out var children))
+                        edges[node.Id] = children = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    children.Add(dependency.Id);
                     if (declaredIds.Contains(dependency.Id)) continue;
                     if (!asked.TryGetValue(dependency.Id, out var entry))
                         asked[dependency.Id] = entry = (dependency.Id, [], $"{node.Via} > {dependency.Id}");
@@ -239,6 +268,7 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                 if (changed) unresolved.Add($"The graph did not settle in {MaxRounds} rounds.");
                 if (frontier.Count > 0) unresolved.Add($"The graph is cut at depth {MaxDepth}.");
                 var reached = new List<Reached>();
+                var rootsOf = RootsOf(roots.Select(r => r.Id), id => edges.GetValueOrDefault(id) ?? []);
                 foreach (var (id, ranges, via) in asked.Values)
                 {
                     var (range, package) = chosen[id];
@@ -247,7 +277,7 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                         unresolved.Add($"{via} {range.PrettyPrint()}: {package.Error}");
                         continue;
                     }
-                    reached.Add(new Reached(id, package.Version, via));
+                    reached.Add(new Reached(id, package.Version, via, rootsOf.GetValueOrDefault(id) ?? []));
                     if (pinned.ContainsKey(id) && NuGetVersion.TryParse(package.Version, out var pinnedVersion))
                         unresolved.AddRange(PinningIssues(via, pinnedVersion, ranges));
                     if (package.Error is not null) unresolved.Add($"{via} {package.Version}: {package.Error}");
@@ -322,9 +352,12 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                     if (via.TryAdd(dependency, $"{via[id]} > {byId.GetValueOrDefault(dependency)?.Id ?? dependency}"))
                         queue.Enqueue(dependency);
 
+            var rootsOf = RootsOf(target.Entries.Where(e => e.Type is "Direct" or "Project").Select(e => e.Id),
+                id => byId.TryGetValue(id, out var entry) ? entry.Dependencies : []);
             var packages = target.Entries
                 .Where(e => e.Type is "Transitive" or "CentralTransitive" && e.Resolved is not null)
-                .Select(e => new Reached(e.Id, e.Resolved!, via.GetValueOrDefault(e.Id) ?? e.Id))
+                .Select(e => new Reached(e.Id, e.Resolved!, via.GetValueOrDefault(e.Id) ?? e.Id,
+                    rootsOf.GetValueOrDefault(e.Id) ?? []))
                 .OrderBy(r => r.Id, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             return new Graph(target.Framework, DependencyResolution.LockFile, packages, []);

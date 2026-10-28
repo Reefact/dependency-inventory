@@ -20,9 +20,10 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   8601 UTC), in `depinv packages` and `depinv frameworks`. It can help identify repositories whose latest commits are
   old; it is not the time the commit reached the branch. It costs one request per scanned commit; a date that cannot
   be read stays empty and `Details` says why.
-- **With `--transitive`, a reference whose own types the code does not use, but which brings a package the code
-  uses, is reported `UsedTransitively`** instead of `Unused`: removing it would break the build. Only the transitive
-  packages matching the filters count. `diagnostics.json` names the packages it brings.
+- **With `--transitive`, a reference whose own types the code does not use, but which is the only one bringing a
+  package the code uses, is reported `UsedTransitively`** instead of `Unused`: removing it would break the build.
+  References that bring the same package stay `Unused`, since none is needed on its own; `diagnostics.json` names
+  them. Only the transitive packages matching the filters count.
 
 ### Changed
 

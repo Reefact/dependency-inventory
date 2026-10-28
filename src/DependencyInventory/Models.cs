@@ -88,7 +88,8 @@ public enum DependencyResolution { LockFile, Computed }
 
 /// <summary>
 /// A package a project depends on without declaring it, for one target framework (none when it is unknown), and the
-/// path that brings it: Via goes from the declared reference to the package, e.g. "Z > W > Y".
+/// path that brings it: Via goes from the declared reference to the package, e.g. "Z > W > Y". Roots are all the
+/// declared references (and, from a lock file, referenced projects) that bring it; they are not written to the reports.
 /// </summary>
 public sealed record TransitiveDependency(
     string Project,
@@ -106,7 +107,8 @@ public sealed record TransitiveDependency(
     PackageSource? Source = null,
     string? Feed = null,
     IReadOnlyList<UsedType>? UsedTypes = null,
-    ProjectType? ProjectType = null);
+    ProjectType? ProjectType = null,
+    [property: JsonIgnore] IReadOnlyList<string>? Roots = null);
 
 public sealed record ScanReport(
     DateTimeOffset ScannedAt,

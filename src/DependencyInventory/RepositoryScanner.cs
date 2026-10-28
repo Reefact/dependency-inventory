@@ -417,9 +417,10 @@ public static class RepositoryScanner
     }
 
     /// <summary>
-    /// A reference whose types the code does not use, but which brings a package the code uses, is UsedTransitively:
-    /// removing it would break the code. The packages it brings are those of the transitive dependencies reported,
-    /// whose path starts with it, in one of the projects the reference applies to.
+    /// A reference whose types the code does not use, but without which a package the code uses would be lost, is
+    /// UsedTransitively: removing it would break the code. It must be the only declared reference bringing that
+    /// package, among the transitive dependencies reported in one of the projects it applies to; a package that other
+    /// references bring too leaves it Unused, with the others named in the diagnostic.
     /// </summary>
     private static IReadOnlyList<PackageOccurrence> MarkUsedTransitively(IReadOnlyList<PackageOccurrence> hits,
         IReadOnlyList<TransitiveDependency> transitive, IReadOnlyDictionary<string, MsBuildFile> files,
@@ -433,24 +434,29 @@ public static class RepositoryScanner
             if (hit.Kind != PackageKind.Reference || hit.Usage != PackageUsage.Unused) return hit;
             var projects = PackageUsageAnalyzer.TargetProjects(hit.File, projectFiles, files.Keys)
                 .ToHashSet(StringComparer.Ordinal);
-            var brought = used.Where(t => projects.Contains(t.File) &&
-                    t.Via.Split('>')[0].Trim().Equals(hit.Package, StringComparison.OrdinalIgnoreCase))
-                .Select(t => t.Package).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal)
+            var bringing = used.Where(t => projects.Contains(t.File) && t.Roots is { } roots &&
+                    roots.Contains(hit.Package, StringComparer.OrdinalIgnoreCase))
                 .ToArray();
-            if (brought.Length == 0) return hit;
+            if (bringing.Length == 0) return hit;
+            var alone = Names(bringing.Where(t => t.Roots!.Count == 1).Select(t => t.Package));
+            var reason = alone.Length > 0
+                ? $"No type of its own is used, but it is the only reference bringing {string.Join(", ", alone)}, " +
+                  "which the code uses."
+                : $"No type of its own is used; it brings {string.Join(", ", Names(bringing.Select(t => t.Package)))}, " +
+                  "which the code uses, but so do " + string.Join(", ", Names(bringing.SelectMany(t => t.Roots!)
+                      .Where(r => !r.Equals(hit.Package, StringComparison.OrdinalIgnoreCase)))) + ".";
+            var usage = alone.Length > 0 ? PackageUsage.UsedTransitively : PackageUsage.Unused;
             if (diagnostic is not null)
             {
                 var index = diagnostic.Usages.FindIndex(u => u.File == hit.File &&
                     u.Package.Equals(hit.Package, StringComparison.OrdinalIgnoreCase) && u.Version == hit.Version);
-                if (index >= 0)
-                    diagnostic.Usages[index] = diagnostic.Usages[index] with
-                    {
-                        Usage = PackageUsage.UsedTransitively,
-                        Reason = $"No type of its own is used, but it brings {string.Join(", ", brought)}, which the code uses."
-                    };
+                if (index >= 0) diagnostic.Usages[index] = diagnostic.Usages[index] with { Usage = usage, Reason = reason };
             }
-            return hit with { Usage = PackageUsage.UsedTransitively };
+            return hit with { Usage = usage };
         }).ToArray();
+
+        static string[] Names(IEnumerable<string> names) =>
+            names.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal).ToArray();
     }
 
     /// <summary>
