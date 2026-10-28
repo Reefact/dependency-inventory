@@ -55,9 +55,10 @@ Ask the user, in one message, before building anything:
 - the **language** of the chart texts: English or French (`--lang en|fr`);
 - which **packages** to show, as globs on package ids (`--include`, repeatable); all by default;
 - when the report lists several branches per repository, which **branch** to chart (`--branch`);
-- whether to leave out the inactive repositories (`--active-since YYYY-MM-DD`, with `--repositories` giving the
-  `repositories.csv` of the same scan, depinv 1.0.0-preview.8 and later): only the repositories whose scanned
-  commit dates from that day or later are counted; all by default;
+- whether to leave out the repositories whose latest commit is old (`--active-since YYYY-MM-DD`, with
+  `--repositories` giving the `repositories.csv` of the same scan, depinv 1.0.0-preview.8 and later): only the
+  repositories whose scanned branch tip has a committer timestamp from that day or later are counted; all by default.
+  That timestamp belongs to the commit, not to its arrival on the branch;
 - which **kinds of projects** to count (`--project-type`, repeatable: Application, Library, Test, Sample), when
   `dependencies.csv` has the ProjectType column (depinv 1.0.0-preview.8 and later); all by default. Charting
   `Application` only answers "which applications use which version", without libraries and tests;

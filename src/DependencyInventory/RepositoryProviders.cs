@@ -15,7 +15,10 @@ public interface IRepositoryProvider : IDisposable
     Task<IReadOnlyList<GitBranch>> GetBranchesAsync(string repositoryId, CancellationToken ct);
     Task<IReadOnlyList<GitFile>> GetTreeAsync(string repositoryId, string commitId, CancellationToken ct);
 
-    /// <summary>The committer date of a commit: the day it landed on its branch; none when the service omits it.</summary>
+    /// <summary>
+    /// The committer timestamp recorded in a commit; none when the service omits it. It is a property of the commit,
+    /// not the time the commit was merged into a branch or became its tip.
+    /// </summary>
     Task<DateTimeOffset?> GetCommitDateAsync(string repositoryId, string commitId, CancellationToken ct);
     Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct);
     string FileUrl(Repository repository, string commitId, string path);

@@ -312,8 +312,8 @@ def main() -> None:
     parser.add_argument("--repositories", type=Path,
                         help="repositories.csv of depinv packages, which gives the date of every scanned commit")
     parser.add_argument("--active-since", type=dt.date.fromisoformat,
-                        help="only the repositories whose scanned commit is this recent, YYYY-MM-DD; needs "
-                             "--repositories")
+                        help="only the repositories whose scanned branch tip has a committer timestamp from this "
+                             "day, YYYY-MM-DD; needs --repositories")
     parser.add_argument("--lang", choices=sorted(TEXT), default="en", help="language of the chart texts")
     parser.add_argument("--as-of", type=dt.date.fromisoformat, default=dt.date.today(),
                         help="date of the support status, YYYY-MM-DD; today by default")
