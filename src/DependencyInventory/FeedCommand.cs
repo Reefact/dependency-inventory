@@ -8,7 +8,7 @@ public sealed class FeedSettings : OriginSettings
 {
     [CommandOption("--feed <FEED>")]
     [Description("Azure Artifacts feed: its name for an organization feed, project/name for a project feed, " +
-        "or its URL (https://dev.azure.com/organization[/project]/_packaging/feed).")]
+        "or its URL (https://dev.azure.com/organization[[/project]]/_packaging/feed).")]
     public string? Feed { get; init; }
 
     [CommandOption("--package <ID[@VERSION]>")]

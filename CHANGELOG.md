@@ -8,6 +8,11 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`depinv feed --help` shows the help again** instead of failing with "Encountered malformed markup tag": the
+  description of `--feed` contained a bracketed part of the feed URL.
+
 ## [1.0.0-preview.6] - 2026-10-28
 
 ### Fixed
