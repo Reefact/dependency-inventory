@@ -31,6 +31,11 @@ public sealed class PackagesSettings : RepositorySettings
     [Description("Do not read the referenced packages from nuget.org, otherwise read after the feeds.")]
     public bool NoNuGetOrg { get; init; }
 
+    [CommandOption("--transitive")]
+    [Description("Also list the packages each project depends on without declaring them, in " +
+        "transitive-dependencies.csv: read from packages.lock.json, otherwise computed from the package sources.")]
+    public bool Transitive { get; init; }
+
     [CommandOption("--used-types")]
     [Description("Also list the types of each package referenced by the code, in used-types.csv.")]
     public bool UsedTypes { get; init; }
@@ -116,10 +121,11 @@ public sealed class PackagesCommand : RepositoryCommand<PackagesSettings>
             var catalog = new PackageCatalog(sources, PackageCatalog.DefaultCacheDirectory(),
                 PackageCatalog.DefaultGlobalPackagesFolder());
             var usage = new PackageUsageAnalyzer(catalog, settings.UsedTypes);
+            var transitive = settings.Transitive ? new TransitiveResolver(catalog) : null;
 
             var result = await ScanConsole.WithProgressAsync(repositories.Count, progress =>
                 RepositoryScanner.ScanAsync(api, repositories, matcher, settings.Diagnostics,
-                    parallelism, progress, cancellationToken, usage));
+                    parallelism, progress, cancellationToken, usage, transitive));
             foreach (var failure in catalog.SourceFailures)
                 ScanConsole.Warning($"Package source failure: {failure}");
             return await WriteReportsAsync(api, repositories, settings, matcher, result, cancellationToken);
@@ -134,7 +140,7 @@ public sealed class PackagesCommand : RepositoryCommand<PackagesSettings>
         PackagesSettings settings, DependencyMatcher matcher, ScanResult result, CancellationToken cancellationToken)
     {
         var report = new ScanReport(DateTimeOffset.UtcNow, api.Origin, matcher.Filters,
-            result.Occurrences, result.Coverage);
+            result.Occurrences, result.Coverage, result.TransitiveDependencies);
         var paths = await ReportWriter.SaveAsync(report, settings.Output, settings.UsedTypes, cancellationToken);
         if (settings.Diagnostics)
         {

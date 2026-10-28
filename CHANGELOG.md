@@ -18,6 +18,12 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   nuget.org even when read from a feed's upstream cache. `--used-types` also writes `used-types.csv`, the types of each
   package referenced by the code. Package contents are cached locally for the next runs, and the NuGet global packages
   folder is read before any download. `diagnostics.json` gives the reason of every undetermined usage.
+- **`depinv packages --transitive` lists the packages each project depends on without declaring them**, per target
+  framework, in `transitive-dependencies.csv`, with the path that brings each one (`Via`). The graph is read from the
+  project's `packages.lock.json` when the repository has one (`Resolution`: `LockFile`), otherwise computed from the
+  `.nuspec` of the packages following the NuGet rules, central transitive pinning included (`Computed`). `--pattern`
+  and `--regex` also match the packages reached transitively, and the `Usage` column flags the code that uses a package
+  it does not declare. `dependencies.csv` is unchanged.
 - **`--feed` accepts a feed URL**, `https://dev.azure.com/organization[/project]/_packaging/feed`, in `depinv feed` and
   `depinv packages`. A feed of another organization is read with that organization's credentials.
 

@@ -9,12 +9,15 @@ public interface IScanProgress
 
 public sealed record RepositoryScanResult(
     RepositoryCoverage Coverage,
-    IReadOnlyList<PackageOccurrence> Occurrences);
+    IReadOnlyList<PackageOccurrence> Occurrences,
+    IReadOnlyList<TransitiveDependency>? TransitiveDependencies = null);
 
+/// <summary>The scan of every repository; transitive dependencies only when they were resolved.</summary>
 public sealed record ScanResult(
     IReadOnlyList<PackageOccurrence> Occurrences,
     IReadOnlyList<RepositoryCoverage> Coverage,
-    IReadOnlyList<RepositoryDiagnostic> Diagnostics)
+    IReadOnlyList<RepositoryDiagnostic> Diagnostics,
+    IReadOnlyList<TransitiveDependency>? TransitiveDependencies = null)
 {
     /// <summary>Repositories that could not be fully inspected.</summary>
     public int IncompleteRepositories =>
@@ -171,12 +174,13 @@ public static class RepositoryScanner
     /// <summary>
     /// Scans the repositories; the result lists them in the given order whatever the parallelism.
     /// The progress is notified concurrently in <see cref="ParallelismMode.Repositories"/> mode.
-    /// With <paramref name="usage"/>, every reference also gets the usage of its package by the code.
+    /// With <paramref name="usage"/>, every reference also gets the usage of its package by the code; with
+    /// <paramref name="transitive"/>, the transitive dependencies matching the filters are resolved too.
     /// </summary>
     public static async Task<ScanResult> ScanAsync(IRepositoryProvider api,
         IReadOnlyList<Repository> repositories, DependencyMatcher matcher, bool collectDiagnostics,
         ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct,
-        PackageUsageAnalyzer? usage = null)
+        PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null)
     {
         var results = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
             async (repo, fileDegree, token) =>
@@ -184,14 +188,16 @@ public static class RepositoryScanner
                 var diagnostic = collectDiagnostics
                     ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
                     : null;
-                var scan = await ScanRepositoryAsync(api, repo, matcher, diagnostic, token, fileDegree, usage);
+                var scan = await ScanRepositoryAsync(api, repo, matcher, diagnostic, token, fileDegree, usage,
+                    transitive);
                 return (Scan: scan, Diagnostic: diagnostic);
             }, ct);
 
         return new ScanResult(
             results.SelectMany(x => x.Scan.Occurrences).ToArray(),
             results.Select(x => x.Scan.Coverage).ToArray(),
-            results.Where(x => x.Diagnostic is not null).Select(x => x.Diagnostic!).ToArray());
+            results.Where(x => x.Diagnostic is not null).Select(x => x.Diagnostic!).ToArray(),
+            transitive is null ? null : results.SelectMany(x => x.Scan.TransitiveDependencies ?? []).ToArray());
     }
 
     /// <summary>
@@ -200,9 +206,10 @@ public static class RepositoryScanner
     /// </summary>
     public static async Task<RepositoryScanResult> ScanRepositoryAsync(IRepositoryProvider api,
         Repository repo, DependencyMatcher matcher, RepositoryDiagnostic? diagnostic, CancellationToken ct,
-        int fileParallelism = 1, PackageUsageAnalyzer? usage = null)
+        int fileParallelism = 1, PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null)
     {
         IReadOnlyList<PackageOccurrence> hits = [];
+        IReadOnlyList<TransitiveDependency> transitiveDependencies = [];
         if (repo.IsDisabled)
             return new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), hits);
 
@@ -259,19 +266,53 @@ public static class RepositoryScanner
                     matchedFilters, api.FileUrl(repo, branch.ObjectId, file.Key)));
             }
             hits = found;
-            if (usage is not null && found.Any(x => x.Kind == PackageKind.Reference))
-                hits = await usage.AnalyzeAsync(api, repo, branch.ObjectId, read.Tree ?? [], msbuildFiles, found,
-                    diagnostic, fileParallelism, ct);
+            // Every declared reference takes part in the graph, matching the filters or not.
+            if (transitive is not null && parsedFiles.Values.Any(f => f.Any(p => p.Kind == PackageKind.Reference)))
+                transitiveDependencies = await transitive.ResolveAsync(api, repo, branch, read.Tree ?? [],
+                    msbuildFiles, matcher, diagnostic, fileParallelism, ct);
+            if (usage is not null)
+                (hits, transitiveDependencies) = await AnalyzeUsageAsync(usage, api, repo, branch, read.Tree ?? [],
+                    msbuildFiles, found, transitiveDependencies, diagnostic, fileParallelism, ct);
             var status = failures.Count > 0 ? CoverageStatus.Partial
                 : read.Files.Count == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
             return new(new(repo.Project, repo.Name, branchName, status,
                 filesRead, hits.Count(x => x.Kind == PackageKind.Reference),
-                failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits);
+                failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), hits, transitiveDependencies);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits);
+            return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits,
+                transitiveDependencies);
         }
     }
+
+    /// <summary>
+    /// The usage of the declared references and of the transitive dependencies, analyzed together so the source files
+    /// are read once. A transitive dependency is analyzed in its project at its resolved version.
+    /// </summary>
+    private static async Task<(IReadOnlyList<PackageOccurrence>, IReadOnlyList<TransitiveDependency>)>
+        AnalyzeUsageAsync(PackageUsageAnalyzer usage, IRepositoryProvider api, Repository repo, GitBranch branch,
+            IReadOnlyList<string> tree, IReadOnlyDictionary<string, MsBuildFile> files,
+            IReadOnlyList<PackageOccurrence> found, IReadOnlyList<TransitiveDependency> transitive,
+            RepositoryDiagnostic? diagnostic, int fileParallelism, CancellationToken ct)
+    {
+        var undeclared = transitive.DistinctBy(TransitiveKey)
+            .Select(t => new PackageOccurrence(t.Project, t.Repository, t.Branch, t.Commit, t.File, t.Package,
+                $"[{t.Version}]", PackageKind.Reference, VersionSource.Explicit, t.MatchedFilters,
+                api.FileUrl(repo, branch.ObjectId, t.File)))
+            .ToArray();
+        if (!found.Any(x => x.Kind == PackageKind.Reference) && undeclared.Length == 0) return (found, transitive);
+
+        var analyzed = await usage.AnalyzeAsync(api, repo, branch.ObjectId, tree, files, [.. found, .. undeclared],
+            diagnostic, fileParallelism, ct);
+        var byKey = analyzed.Skip(found.Count)
+            .ToDictionary(o => (o.File, o.Package.ToLowerInvariant(), o.Version!.Trim('[', ']')));
+        return (analyzed.Take(found.Count).ToArray(), transitive.Select(t => byKey[TransitiveKey(t)] is var o
+            ? t with { Usage = o.Usage, Source = o.Source, Feed = o.Feed, UsedTypes = o.UsedTypes }
+            : t).ToArray());
+    }
+
+    private static (string, string, string) TransitiveKey(TransitiveDependency t) =>
+        (t.File, t.Package.ToLowerInvariant(), t.Version);
 }

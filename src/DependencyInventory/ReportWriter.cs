@@ -9,8 +9,8 @@ public static class ReportWriter
         SaveAsync(report, directory, false, ct);
 
     /// <summary>
-    /// Writes the package inventory: report.json, dependencies.csv, central-versions.csv, repositories.csv, and
-    /// used-types.csv with <paramref name="usedTypes"/>.
+    /// Writes the package inventory: report.json, dependencies.csv, central-versions.csv, repositories.csv,
+    /// used-types.csv with <paramref name="usedTypes"/>, and transitive-dependencies.csv when the report has them.
     /// </summary>
     public static async Task<string> SaveAsync(ScanReport report, string directory, bool usedTypes, CancellationToken ct)
     {
@@ -43,6 +43,17 @@ public static class ReportWriter
                 ["Project", "Repository", "File", "Package", "Version", "Source", "Type", "Files"],
                 references.SelectMany(x => (x.UsedTypes ?? []).Select(t => new[] { x.Project, x.Repository, x.File, x.Package,
                     x.Version ?? "", x.Source?.ToString() ?? "", t.Type, t.Files.ToString() })), ct);
+
+        // Only with --transitive; the file of a previous run in the same folder is removed otherwise.
+        var transitiveFile = Path.Combine(absolute, "transitive-dependencies.csv");
+        if (report.TransitiveDependencies is not { } transitive) File.Delete(transitiveFile);
+        else
+            await WriteCsvAsync(transitiveFile,
+                ["Project", "Repository", "Branch", "Commit", "File", "Framework", "Package", "Version", "Via",
+                    "Resolution", "MatchedFilters", "Usage", "Source", "Feed"],
+                transitive.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.File, x.Framework ?? "",
+                    x.Package, x.Version, x.Via, x.Resolution.ToString(), string.Join(" | ", x.MatchedFilters),
+                    x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "", x.Feed ?? "" }), ct);
         return absolute;
     }
 

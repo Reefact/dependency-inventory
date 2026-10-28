@@ -15,6 +15,9 @@ public sealed class RepositoryDiagnostic
 
     /// <summary>How the usage of every reference was decided: where its package was read, why it is undetermined.</summary>
     public List<UsageDiagnostic> Usages { get; } = [];
+
+    /// <summary>With --transitive, how the graph of every project and framework was found, and what it could not follow.</summary>
+    public List<TransitiveDiagnostic> Transitive { get; } = [];
 }
 
 public sealed record FileDiagnostic(

@@ -58,6 +58,17 @@ public sealed record PackageResolution(
     string? Error);
 
 /// <summary>
+/// The dependencies a version declares in its .nuspec, where it was found, or why it could not be read.
+/// </summary>
+public sealed record PackageDependencies(
+    string? Version,
+    IReadOnlyList<NuspecDependency> Dependencies,
+    PackageSource? Source,
+    string? Feed,
+    string? Error,
+    IReadOnlyList<string>? DependencyGroups = null);
+
+/// <summary>
 /// The content of the referenced package versions, each resolved once per run: located in the sources in their order,
 /// then read from the local cache, the global packages folder, or downloaded. Thread-safe.
 /// </summary>
@@ -69,6 +80,8 @@ public sealed class PackageCatalog
     private readonly string? _cacheDirectory;
     private readonly string? _globalPackagesFolder;
     private readonly ConcurrentDictionary<string, Lazy<Task<PackageResolution>>> _resolutions =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<Task<PackageDependencies>>> _dependencies =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte> _sourceFailures = new();
 
@@ -87,7 +100,7 @@ public sealed class PackageCatalog
     public static string? DefaultCacheDirectory()
     {
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return string.IsNullOrEmpty(local) ? null : Path.Combine(local, "depinv", "package-content", "v1");
+        return string.IsNullOrEmpty(local) ? null : Path.Combine(local, "depinv", "package-content", "v2");
     }
 
     /// <summary>The NuGet global packages folder: NUGET_PACKAGES, otherwise ~/.nuget/packages; null when missing.</summary>
@@ -110,6 +123,27 @@ public sealed class PackageCatalog
     /// </summary>
     public async Task<PackageResolution> ResolveAsync(string id, VersionRange range, CancellationToken ct)
     {
+        var (version, error) = await SelectVersionAsync(id, range, ct);
+        return version is null
+            ? new PackageResolution(null, null, null, null, null, error)
+            : await ResolveAsync(id, version, ct);
+    }
+
+    /// <summary>
+    /// The dependencies of the version NuGet restores for a range, as its .nuspec declares them: read from the local
+    /// cache, the global packages folder, or the .nuspec alone, never the whole package. Each version is read once.
+    /// </summary>
+    public async Task<PackageDependencies> ResolveDependenciesAsync(string id, VersionRange range, CancellationToken ct)
+    {
+        var (version, error) = await SelectVersionAsync(id, range, ct);
+        return version is null
+            ? new PackageDependencies(null, [], null, null, error)
+            : await _dependencies.GetOrAdd(Key(id, version), _ => new(() => ReadDependenciesAsync(id, version, ct))).Value;
+    }
+
+    private async Task<(NuGetVersion? Version, string? Error)> SelectVersionAsync(string id, VersionRange range,
+        CancellationToken ct)
+    {
         var versions = new List<NuGetVersion>();
         var errors = new List<string>();
         foreach (var source in _sources)
@@ -125,13 +159,15 @@ public sealed class PackageCatalog
         }
         var allowPrerelease = range.MinVersion?.IsPrerelease == true || range.Float?.IncludePrerelease == true;
         if (range.FindBestMatch(versions.Where(v => allowPrerelease || !v.IsPrerelease)) is { } best)
-            return await ResolveAsync(id, best, ct);
+            return (best, null);
 
         var searched = string.Join(", ", _sources.Select(s => s.Description));
         var message = $"No version satisfying {range.PrettyPrint()} in {searched}";
-        return new PackageResolution(null, null, null, null, null,
-            errors.Count > 0 ? $"{message} ({string.Join("; ", errors)})" : message);
+        return (null, errors.Count > 0 ? $"{message} ({string.Join("; ", errors)})" : message);
     }
+
+    private static string Key(string id, NuGetVersion version) =>
+        $"{id.ToLowerInvariant()}/{version.ToNormalizedString().ToLowerInvariant()}";
 
     private string Failure(PackageSourceEntry source, Exception ex)
     {
@@ -141,10 +177,13 @@ public sealed class PackageCatalog
     }
 
     public Task<PackageResolution> ResolveAsync(string id, NuGetVersion version, CancellationToken ct) =>
-        _resolutions.GetOrAdd($"{id.ToLowerInvariant()}/{version.ToNormalizedString().ToLowerInvariant()}",
-            _ => new(() => ReadAsync(id, version, ct))).Value;
+        _resolutions.GetOrAdd(Key(id, version), _ => new(() => ReadAsync(id, version, ct))).Value;
 
-    private async Task<PackageResolution> ReadAsync(string id, NuGetVersion version, CancellationToken ct)
+    private sealed record Location(PackageSourceEntry Source, PackageSource Kind, string? Feed);
+
+    /// <summary>The first source holding the version, and the real origin of the package; or why none was found.</summary>
+    private async Task<(Location? Location, string? Error)> LocateAsync(string id, NuGetVersion version,
+        CancellationToken ct)
     {
         var errors = new List<string>();
         foreach (var source in _sources)
@@ -160,25 +199,119 @@ public sealed class PackageCatalog
             if (found is null) continue;
 
             // A public package saved in a feed from nuget.org is still a nuget.org package.
-            var (kind, feed) = source.Kind == PackageSource.Feed && !found.FromPublicUpstream
-                ? (PackageSource.Feed, source.FeedName)
-                : (PackageSource.NuGetOrg, null);
-            try
-            {
-                var (content, readFrom) = await ReadContentAsync(source, id, version, ct);
-                return new PackageResolution(version.ToNormalizedString(), content, kind, feed, readFrom, null);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                return new PackageResolution(version.ToNormalizedString(), null, kind, feed, source.Feed.Origin,
-                    $"Cannot read the package from {source.Description}: {ex.Message}");
-            }
+            return source.Kind == PackageSource.Feed && !found.FromPublicUpstream
+                ? (new Location(source, PackageSource.Feed, source.FeedName), null)
+                : (new Location(source, PackageSource.NuGetOrg, null), null);
         }
         var searched = string.Join(", ", _sources.Select(s => s.Description));
-        return new PackageResolution(version.ToNormalizedString(), null, null, null, null, errors.Count > 0
+        return (null, errors.Count > 0
             ? $"Not found in {searched} ({string.Join("; ", errors)})"
             : $"Not found in {searched}");
+    }
+
+    private async Task<PackageResolution> ReadAsync(string id, NuGetVersion version, CancellationToken ct)
+    {
+        var normalized = version.ToNormalizedString();
+        var (location, error) = await LocateAsync(id, version, ct);
+        if (location is null) return new PackageResolution(normalized, null, null, null, null, error);
+        try
+        {
+            var (content, readFrom) = await ReadContentAsync(location.Source, id, version, ct);
+            return new PackageResolution(normalized, content, location.Kind, location.Feed, readFrom, null);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            return new PackageResolution(normalized, null, location.Kind, location.Feed, location.Source.Feed.Origin,
+                $"Cannot read the package from {location.Source.Description}: {ex.Message}");
+        }
+    }
+
+    private async Task<PackageDependencies> ReadDependenciesAsync(string id, NuGetVersion version, CancellationToken ct)
+    {
+        var normalized = version.ToNormalizedString();
+        var (location, error) = await LocateAsync(id, version, ct);
+        if (location is null) return new PackageDependencies(normalized, [], null, null, error);
+        try
+        {
+            var (dependencies, groups) = await ReadNuspecDependenciesAsync(location.Source, id, version, ct);
+            return new PackageDependencies(normalized, dependencies, location.Kind, location.Feed, null, groups);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            return new PackageDependencies(normalized, [], location.Kind, location.Feed,
+                $"Cannot read the .nuspec from {location.Source.Description}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The package dependencies a .nuspec declares: those of the content already cached when there is one, otherwise
+    /// the cached .nuspec, the one of the global packages folder, or the one of the source, then cached.
+    /// </summary>
+    private async Task<(IReadOnlyList<NuspecDependency>, IReadOnlyList<string>?)> ReadNuspecDependenciesAsync(
+        PackageSourceEntry source, string id, NuGetVersion version, CancellationToken ct)
+    {
+        if (CacheFile(source, id, version, ".json") is { } contentFile && File.Exists(contentFile) &&
+            await ReadCachedContentAsync(contentFile, ct) is { } content)
+            return (content.Dependencies, content.DependencyGroups);
+
+        var nuspecFile = CacheFile(source, id, version, ".nuspec");
+        string? nuspec = null;
+        if (nuspecFile is not null && File.Exists(nuspecFile))
+        {
+            try { nuspec = await File.ReadAllTextAsync(nuspecFile, ct); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        var extracted = ExtractedFolder(id, version);
+        if (nuspec is null && extracted is not null && await ExtractedFromAsync(extracted, source.Feed.Origin, ct) &&
+            Directory.EnumerateFiles(extracted, "*.nuspec").FirstOrDefault() is { } extractedNuspec)
+            nuspec = await File.ReadAllTextAsync(extractedNuspec, ct);
+        if (nuspec is null)
+        {
+            nuspec = await source.Feed.GetNuspecAsync(id, version.ToNormalizedString(), ct)
+                ?? throw new InvalidOperationException("The .nuspec file is missing.");
+            if (nuspecFile is not null) await WriteCacheAsync(nuspecFile, nuspec, ct);
+        }
+        var parsed = NuspecParser.Parse(nuspec);
+        return (parsed.Dependencies.Where(d => d.Kind == DependencyKind.Package).ToArray(), parsed.DependencyGroups);
+    }
+
+    /// <summary>The cache file of a version read from a source; null without cache.</summary>
+    private string? CacheFile(PackageSourceEntry source, string id, NuGetVersion version, string extension) =>
+        _cacheDirectory is null ? null
+            // Two feeds may hold different packages under the same id and version: the cache is kept per source.
+            : Path.Combine(_cacheDirectory, SourceKey(source.Feed.Origin), id.ToLowerInvariant(),
+                version.ToNormalizedString().ToLowerInvariant() + extension);
+
+    private string? ExtractedFolder(string id, NuGetVersion version) =>
+        _globalPackagesFolder is null ? null
+            : Path.Combine(_globalPackagesFolder, id.ToLowerInvariant(), version.ToNormalizedString().ToLowerInvariant());
+
+    private static async Task<PackageContent?> ReadCachedContentAsync(string file, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = File.OpenRead(file);
+            return await JsonSerializer.DeserializeAsync<PackageContent>(stream, CacheFormat, ct);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// A published version never changes: what was read of it is kept for the next runs. The cache is a convenience,
+    /// a failure to write it is ignored.
+    /// </summary>
+    private static async Task WriteCacheAsync(string file, string text, CancellationToken ct)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            var temporary = $"{file}.{Guid.NewGuid():N}.tmp";
+            await File.WriteAllTextAsync(temporary, text, ct);
+            File.Move(temporary, file, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     /// <summary>A short name of a source for the cache folders: the beginning of the hash of its service index URL.</summary>
@@ -207,24 +340,13 @@ public sealed class PackageCatalog
     private async Task<(PackageContent Content, string ReadFrom)> ReadContentAsync(PackageSourceEntry source,
         string id, NuGetVersion version, CancellationToken ct)
     {
-        var (lowerId, lowerVersion) = (id.ToLowerInvariant(), version.ToNormalizedString().ToLowerInvariant());
-        // Two feeds may hold different packages under the same id and version: the cache is kept per source.
-        var cacheFile = _cacheDirectory is null ? null
-            : Path.Combine(_cacheDirectory, SourceKey(source.Feed.Origin), lowerId, lowerVersion + ".json");
-        if (cacheFile is not null && File.Exists(cacheFile))
-        {
-            try
-            {
-                await using var stream = File.OpenRead(cacheFile);
-                if (await JsonSerializer.DeserializeAsync<PackageContent>(stream, CacheFormat, ct) is { } cached)
-                    return (cached, "Cache");
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { }
-        }
+        var cacheFile = CacheFile(source, id, version, ".json");
+        if (cacheFile is not null && File.Exists(cacheFile) && await ReadCachedContentAsync(cacheFile, ct) is { } cached)
+            return (cached, "Cache");
 
         PackageContent content;
         string readFrom;
-        var extracted = _globalPackagesFolder is null ? null : Path.Combine(_globalPackagesFolder, lowerId, lowerVersion);
+        var extracted = ExtractedFolder(id, version);
         if (extracted is not null && await ExtractedFromAsync(extracted, source.Feed.Origin, ct))
         {
             content = PackageContentReader.ReadFolder(extracted);
@@ -238,19 +360,7 @@ public sealed class PackageCatalog
             readFrom = source.Feed.Origin;
         }
 
-        // A published version never changes: its content is kept for the next runs. The cache is a convenience,
-        // a failure to write it is ignored.
-        if (cacheFile is not null)
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(cacheFile)!);
-                var temporary = $"{cacheFile}.{Guid.NewGuid():N}.tmp";
-                await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(content, CacheFormat), ct);
-                File.Move(temporary, cacheFile, overwrite: true);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-        }
+        if (cacheFile is not null) await WriteCacheAsync(cacheFile, JsonSerializer.Serialize(content, CacheFormat), ct);
         return (content, readFrom);
     }
 }

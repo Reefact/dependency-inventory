@@ -60,6 +60,17 @@ public sealed class DepinvAppTests
         Assert.Equal(2, await DepinvApp.Create().RunAsync(["packages", .. arguments]));
     }
 
+    // A known option reaches the command, which stops on the invalid URL with 2.
+    [Theory]
+    [InlineData("--transitive")]
+    [InlineData("--used-types")]
+    [InlineData("--no-nuget-org")]
+    public async Task ThePackageScanAcceptsItsOptions(string option)
+    {
+        Assert.Equal(2, await DepinvApp.Create().RunAsync(
+            ["packages", "--provider", "azure", "--url", "https://example.com/not-azure", "--pattern", "A", option]));
+    }
+
     [Fact]
     public async Task TheFeedCommandRejectsAnInvalidFeedUrl()
     {

@@ -24,7 +24,8 @@ public sealed record PackageContent(
     IReadOnlyList<ExtensionMethod> ExtensionMethods,
     bool HasBuildAssets,
     bool DevelopmentDependency,
-    IReadOnlyList<NuspecDependency> Dependencies)
+    IReadOnlyList<NuspecDependency> Dependencies,
+    IReadOnlyList<string>? DependencyGroups = null)
 {
     public bool HasTypes => Types.Count > 0 || ExtensionMethods.Count > 0;
 }
@@ -87,7 +88,8 @@ public static class PackageContentReader
                 .ThenBy(e => e.Name, StringComparer.Ordinal).ToArray(),
             entries.Any(e => e.Parts.Length > 1 && BuildFolders.Contains(e.Parts[0], StringComparer.OrdinalIgnoreCase)),
             string.Equals(nuspec?.Metadata.DevelopmentDependency?.Trim(), "true", StringComparison.OrdinalIgnoreCase),
-            nuspec?.Dependencies.Where(d => d.Kind == DependencyKind.Package).ToArray() ?? []);
+            nuspec?.Dependencies.Where(d => d.Kind == DependencyKind.Package).ToArray() ?? [],
+            nuspec?.DependencyGroups ?? []);
     }
 
     /// <summary>The public top-level types and the extension methods of an assembly; nothing when it is not one.</summary>

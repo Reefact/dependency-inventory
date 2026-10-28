@@ -137,6 +137,8 @@ The dependency-report folder (configurable with --output) contains:
 - central-versions.csv: central version declarations matching the filters;
 - repositories.csv: coverage of every repository found and its scan status;
 - used-types.csv: with --used-types only, the types of each package referenced by the code;
+- transitive-dependencies.csv: with --transitive only, the packages each project depends on without declaring them
+  (see [Transitive dependencies](#-transitive-dependencies));
 - report.json: full JSON report, including the applied filters, the usage and the used types.
 
 CSV files are UTF-8 with BOM and semicolon-separated.
@@ -208,6 +210,43 @@ The content of each package version is cached in the local application data fold
 published version never changes; the next runs do not download it again. The NuGet global packages folder
 (NUGET_PACKAGES, or ~/.nuget/packages) is read before any download. Reading every C# file takes more requests than the
 project files only: --parallelism applies to them as well.
+
+## 🕸️ Transitive dependencies
+
+A project that references Z also depends on Y when Z depends on Y, even though it never asked for Y. With --transitive,
+`depinv packages` lists those packages too, per project and target framework, so that --pattern and --regex also find
+the projects exposed to a package only through another one:
+
+~~~powershell
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.Messaging" --feed my-feed --transitive
+~~~
+
+Every declared reference takes part in the graph, whether it matches the filters or not; only the transitive packages
+matching them are written to transitive-dependencies.csv: Project, Repository, Branch, Commit, File (the project file),
+Framework, Package, Version, Via, Resolution, MatchedFilters, Usage, Source and Feed. dependencies.csv keeps the
+declared references only.
+
+- Via is the path from the declared reference to the package, such as A > B > Y.
+- Resolution says how the graph was found:
+  - LockFile: the packages.lock.json next to the project, read as is; it holds the exact resolution of each framework.
+  - Computed: otherwise, from the .nuspec of the packages, read from the same sources as the usage (--feed, then
+    nuget.org), following the NuGet rules without restore. A declared reference always wins; otherwise the nearest
+    level wins, and among the ranges of one level the one with the highest minimum; each range gives the lowest
+    published version satisfying it; the dependency group nearest to the framework applies, an empty group meaning no
+    dependency. With CentralPackageTransitivePinningEnabled, the central versions of Directory.Packages.props apply to
+    transitive packages too.
+- Usage, Source and Feed follow the rules of [Package usage](#-package-usage). Usage tells whether the code uses a
+  package it does not declare: such a project breaks the day the package that brings it stops depending on it.
+
+Only the .nuspec of each package is read, not the whole package, except for those matching the filters, whose usage
+is analyzed; both are cached. A branch that cannot be followed (a version found in no source, an MSBuild property)
+stops there; with --diagnostics, diagnostics.json gives it under Transitive, with the resolution of every project and
+framework.
+
+Accepted limits: a computed graph is right in the vast majority of cases, not always: MSBuild conditions, floating
+versions and packages missing from every source can make it differ from a real restore; Resolution says which lines
+are exact. The packages a project gets through a project reference are listed on the project that declares them,
+unless a lock file is read. project.assets.json, a build output, is not read.
 
 ## 🧱 Target frameworks
 
@@ -302,7 +341,7 @@ Files: *.csproj, *.fsproj, *.vbproj, *.props, *.targets and packages.config. The
 
 PackageReference, GlobalPackageReference and package are direct references; PackageVersion is a central version declaration, not a proof of direct consumption.
 
-The scanner can match a version from the nearest Directory.Packages.props, without fully evaluating MSBuild. It does not resolve transitive dependencies and does not run a NuGet restore.
+The scanner can match a version from the nearest Directory.Packages.props, without fully evaluating MSBuild. It does not run a NuGet restore; transitive dependencies are only resolved with --transitive.
 
 ### Parallelism
 

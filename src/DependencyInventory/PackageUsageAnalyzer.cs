@@ -7,10 +7,14 @@ namespace DependencyInventory;
 public sealed record MsBuildFile(
     IReadOnlyList<ParsedPackage> Packages,
     ProjectImports Imports,
-    DeclaredFrameworks Frameworks)
+    DeclaredFrameworks Frameworks,
+    bool TransitivePinning = false)
 {
     public static MsBuildFile Parse(string path, string xml) =>
-        new(NuGetDependencyParser.Parse(path, xml), ProjectImports.Parse(xml), FrameworkParser.Parse(path, xml));
+        new(NuGetDependencyParser.Parse(path, xml), ProjectImports.Parse(xml), FrameworkParser.Parse(path, xml),
+            System.Xml.Linq.XDocument.Parse(xml).Descendants()
+                .Any(e => e.Name.LocalName == "CentralPackageTransitivePinningEnabled" &&
+                    e.Value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)));
 }
 
 /// <summary>How the usage of one reference was decided, written to diagnostics.json with --diagnostics.</summary>
@@ -187,20 +191,30 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
             extensions.AddRange(surface.Index.Extensions);
             errors.AddRange(surface.Errors);
         }
-        return new(new TypeIndex(new PackageContent(types, extensions, false, false, [])), errors);
+        return new(new TypeIndex(new PackageContent(types, extensions, false, false, [], [])), errors);
     }
 
-    /// <summary>The dependencies of the group nearest to each framework; every group when no framework is known.</summary>
-    private static IEnumerable<NuspecDependency> Dependencies(PackageContent content, IReadOnlyList<string> frameworks)
+    private static IEnumerable<NuspecDependency> Dependencies(PackageContent content, IReadOnlyList<string> frameworks) =>
+        Dependencies(content.Dependencies, content.DependencyGroups, frameworks);
+
+    /// <summary>
+    /// The dependencies of the group nearest to each framework, as NuGet picks it among every group, empty ones
+    /// included (an empty group means no dependency); every group when no framework is known.
+    /// </summary>
+    internal static IEnumerable<NuspecDependency> Dependencies(IReadOnlyList<NuspecDependency> dependencies,
+        IReadOnlyList<string>? groups, IReadOnlyList<string> frameworks)
     {
-        var groups = content.Dependencies.GroupBy(d => d.Framework ?? "", StringComparer.OrdinalIgnoreCase).ToArray();
         var parsed = frameworks.Select(NuGetFramework.Parse).Where(f => !f.IsUnsupported).ToArray();
         // Frameworks may depend on different versions of a package: each version is kept.
-        if (parsed.Length == 0) return content.Dependencies.DistinctBy(DependencyKey);
+        if (parsed.Length == 0) return dependencies.DistinctBy(DependencyKey);
+        var keys = (groups ?? []).Concat(dependencies.Select(d => d.Framework ?? ""))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         return parsed
-            .SelectMany(framework => NuGetFrameworkUtility.GetNearest(groups, framework,
-                g => g.Key.Length == 0 ? NuGetFramework.AnyFramework : NuGetFramework.Parse(g.Key))
-                ?? Enumerable.Empty<NuspecDependency>())
+            .Select(framework => NuGetFrameworkUtility.GetNearest(keys, framework,
+                key => key.Length == 0 ? NuGetFramework.AnyFramework : NuGetFramework.Parse(key)))
+            .Where(key => key is not null)
+            .SelectMany(key => dependencies.Where(d =>
+                string.Equals(d.Framework ?? "", key, StringComparison.OrdinalIgnoreCase)))
             .DistinctBy(DependencyKey);
     }
 
@@ -219,13 +233,13 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
 
     private static bool IsCSharp(string projectFile) => projectFile.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase);
 
-    private static string Folder(string path) => path[..(path.LastIndexOf('/') + 1)];
+    internal static string Folder(string path) => path[..(path.LastIndexOf('/') + 1)];
 
     /// <summary>
     /// The projects a reference applies to: the project file itself, otherwise (Directory.Build.props, packages.config,
     /// any imported file) every project under its folder.
     /// </summary>
-    private static IReadOnlyList<string> TargetProjects(string file, IReadOnlyList<string> projectFiles) =>
+    internal static IReadOnlyList<string> TargetProjects(string file, IReadOnlyList<string> projectFiles) =>
         NuGetDependencyParser.IsProjectFile(file)
             ? [file]
             : projectFiles.Where(p => p.StartsWith(Folder(file), StringComparison.Ordinal)).ToArray();

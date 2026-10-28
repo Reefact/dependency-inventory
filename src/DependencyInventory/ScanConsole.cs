@@ -96,6 +96,10 @@ public static class ScanConsole
         if (references.Any(x => x.Usage is not null))
             foreach (var usage in Enum.GetValues<PackageUsage>())
                 summary.AddRow($"{usage} references", references.Count(x => x.Usage == usage).ToString());
+        if (result.TransitiveDependencies is { } transitive)
+            summary.AddRow("Transitive dependencies", transitive.Count.ToString())
+                .AddRow("Transitive dependencies used by the code",
+                    transitive.Count(x => x.Usage == PackageUsage.Used).ToString());
         AnsiConsole.Write(summary);
         AnsiConsole.MarkupLine($"Reports: [green]{Markup.Escape(reportDirectory)}[/]");
         if (result.IncompleteRepositories > 0)
