@@ -119,7 +119,7 @@ public sealed class AzureArtifactsFeed : IPackageFeed
 
     /// <summary>
     /// Uses <paramref name="http"/> as is, authentication included, and <paramref name="anonymous"/> for the
-    /// redirections to another host, such as the blob storage a package is downloaded from.
+    /// redirects to a different host, such as the blob storage a package is downloaded from.
     /// </summary>
     public AzureArtifactsFeed(AzureFeed feed, HttpClient http, HttpClient anonymous)
     {
@@ -368,7 +368,7 @@ public sealed class NuGetOrgFeed : IPackageFeed
     /// <summary>The response, or null on HTTP 404.</summary>
     private async Task<HttpResponseMessage?> SendAsync(string url, CancellationToken ct)
     {
-        // nuget.org is read anonymously: its own client follows the redirections.
+        // nuget.org is read anonymously: its own client follows the redirects.
         var response = await PackageDownload.GetAsync(_http, _http, url, ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
@@ -389,20 +389,20 @@ public sealed class NuGetOrgFeed : IPackageFeed
 
 internal static class PackageDownload
 {
-    private const int MaxRedirections = 5;
+    private const int MaxRedirects = 5;
 
     /// <summary>
-    /// A GET that follows redirections: Azure Artifacts answers a package download with HTTP 303 to its blob storage.
-    /// The clients do not follow them by themselves, so that credentials never leave their host: a redirection to
-    /// another host is read with <paramref name="anonymous"/>, and only to HTTPS. Returns the last response, a
-    /// redirection when there are too many.
+    /// A GET that follows redirects: Azure Artifacts responds to package download requests with an HTTP 303 redirect
+    /// to blob storage. The clients are configured not to follow redirects, so that credentials are never forwarded to
+    /// another host: a redirect to a different host is followed with <paramref name="anonymous"/>, and only over HTTPS.
+    /// Returns the last response, a redirect when there are too many.
     /// </summary>
     public static async Task<HttpResponseMessage> GetAsync(HttpClient authenticated, HttpClient anonymous, string url,
         CancellationToken ct)
     {
         var origin = new Uri(url);
         var uri = origin;
-        for (var redirections = 0; ; redirections++)
+        for (var redirects = 0; ; redirects++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             var sameHost = uri.Scheme == origin.Scheme && string.Equals(uri.Host, origin.Host, StringComparison.OrdinalIgnoreCase);
@@ -410,7 +410,7 @@ internal static class PackageDownload
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (response.StatusCode is not (HttpStatusCode.MovedPermanently or HttpStatusCode.Found
                     or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect) ||
-                response.Headers.Location is not { } location || redirections == MaxRedirections)
+                response.Headers.Location is not { } location || redirects == MaxRedirects)
                 return response;
             response.Dispose();
             uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
