@@ -22,7 +22,7 @@ public static class ReportWriter
 
         var columns = new[]
         {
-            "Project", "Repository", "Branch", "Commit", "File", "Package",
+            "Scope", "Repository", "Branch", "Commit", "File", "Package",
             "Version", "Kind", "VersionSource", "MatchedFilters", "Url"
         };
         var references = report.Occurrences.Where(x => x.Kind == PackageKind.Reference).ToArray();
@@ -33,16 +33,16 @@ public static class ReportWriter
         await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"), columns,
             report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(ToColumns), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
-            ["Project", "Repository", "Branch", "Status", "FilesExamined", "References", "Details", "CommitDate"],
-            report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
+            ["Scope", "Repository", "Branch", "Status", "FilesExamined", "References", "Details", "CommitDate"],
+            report.Coverage.Select(x => new[] { x.Scope, x.Repository, x.Branch ?? "", x.Status.ToString(),
                 x.FilesExamined.ToString(), x.References.ToString(), x.Details ?? "", Date(x.CommitDate) }), ct);
         // Without --used-types, the file of a previous run in the same folder would look like part of this report.
         var usedTypesFile = Path.Combine(absolute, "used-types.csv");
         if (!usedTypes) File.Delete(usedTypesFile);
         else
             await WriteCsvAsync(usedTypesFile,
-                ["Project", "Repository", "Branch", "Commit", "File", "Package", "Version", "Source", "Type", "Files"],
-                references.SelectMany(x => (x.UsedTypes ?? []).Select(t => new[] { x.Project, x.Repository, x.Branch,
+                ["Scope", "Repository", "Branch", "Commit", "File", "Package", "Version", "Source", "Type", "Files"],
+                references.SelectMany(x => (x.UsedTypes ?? []).Select(t => new[] { x.Scope, x.Repository, x.Branch,
                     x.Commit, x.File, x.Package, x.Version ?? "", x.Source?.ToString() ?? "", t.Type,
                     t.Files.ToString() })), ct);
 
@@ -51,9 +51,9 @@ public static class ReportWriter
         if (report.TransitiveDependencies is not { } transitive) File.Delete(transitiveFile);
         else
             await WriteCsvAsync(transitiveFile,
-                ["Project", "Repository", "Branch", "Commit", "File", "Framework", "Package", "Version", "Via",
+                ["Scope", "Repository", "Branch", "Commit", "File", "Framework", "Package", "Version", "Via",
                     "Resolution", "MatchedFilters", "Usage", "Source", "Feed", "ProjectType"],
-                transitive.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.File, x.Framework ?? "",
+                transitive.Select(x => new[] { x.Scope, x.Repository, x.Branch, x.Commit, x.File, x.Framework ?? "",
                     x.Package, x.Version, x.Via, x.Resolution.ToString(), string.Join(" | ", x.MatchedFilters),
                     x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "", x.Feed ?? "",
                     x.ProjectType?.ToString() ?? "" }), ct);
@@ -70,13 +70,13 @@ public static class ReportWriter
             json, new UTF8Encoding(false), ct);
 
         await WriteCsvAsync(Path.Combine(absolute, "frameworks.csv"),
-            ["Project", "Repository", "Branch", "Commit", "ProjectFile", "Framework", "FrameworkSource", "Url",
+            ["Scope", "Repository", "Branch", "Commit", "ProjectFile", "Framework", "FrameworkSource", "Url",
                 "ProjectType"],
-            report.Frameworks.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.ProjectFile,
+            report.Frameworks.Select(x => new[] { x.Scope, x.Repository, x.Branch, x.Commit, x.ProjectFile,
                 x.Framework ?? "", x.FrameworkSource.ToString(), x.Url, x.ProjectType?.ToString() ?? "" }), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
-            ["Project", "Repository", "Branch", "Status", "FilesExamined", "Projects", "Details", "CommitDate"],
-            report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
+            ["Scope", "Repository", "Branch", "Status", "FilesExamined", "Projects", "Details", "CommitDate"],
+            report.Coverage.Select(x => new[] { x.Scope, x.Repository, x.Branch ?? "", x.Status.ToString(),
                 x.FilesExamined.ToString(), x.Projects.ToString(), x.Details ?? "", Date(x.CommitDate) }), ct);
         return absolute;
     }
@@ -137,7 +137,7 @@ public static class ReportWriter
         ?? "";
 
     private static string[] ToColumns(PackageOccurrence x) =>
-        [x.Project, x.Repository, x.Branch, x.Commit, x.File,
+        [x.Scope, x.Repository, x.Branch, x.Commit, x.File,
             x.Package, x.Version ?? "", x.Kind.ToString(), x.VersionSource.ToString(),
             string.Join(" | ", x.MatchedFilters), x.Url];
 

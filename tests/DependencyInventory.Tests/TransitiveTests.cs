@@ -49,7 +49,7 @@ public sealed class TransitiveTests
         Dictionary<string, string> files, string pattern = "*", PackageCatalog? catalog = null)
     {
         var api = new FakeRepositoryProvider().AddRepository("app", files: files);
-        var diagnostic = new RepositoryDiagnostic { Project = "project", Repository = "app" };
+        var diagnostic = new RepositoryDiagnostic { Scope = "project", Repository = "app" };
         catalog ??= Catalog();
         var result = await RepositoryScanner.ScanRepositoryAsync(api, api.Repositories.Single(),
             DependencyMatcher.Create([pattern], []), diagnostic, CancellationToken.None,
@@ -436,7 +436,7 @@ public sealed class TransitiveTests
             Assert.Equal(dependencies, await File.ReadAllTextAsync(Path.Combine(directory, "dependencies.csv")));
             Assert.Equal(
             [
-                "Project;Repository;Branch;Commit;File;Framework;Package;Version;Via;Resolution;MatchedFilters;Usage;Source;Feed;ProjectType",
+                "Scope;Repository;Branch;Commit;File;Framework;Package;Version;Via;Resolution;MatchedFilters;Usage;Source;Feed;ProjectType",
                 "project;api;main;abc;/App.csproj;net8.0;E;1.0.0;A > B > E;Computed;Glob:*;Used;NuGetOrg;;"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "transitive-dependencies.csv")));
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));

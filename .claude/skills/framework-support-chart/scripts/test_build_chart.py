@@ -177,9 +177,9 @@ class UsageTests(unittest.TestCase):
 
 class BranchTests(unittest.TestCase):
     ROWS = [
-        {"Project": "p", "Repository": "api", "Branch": "release", "Package": "A"},
-        {"Project": "p", "Repository": "api", "Branch": "develop", "Package": "A"},
-        {"Project": "p", "Repository": "lib", "Branch": "release", "Package": "A"},
+        {"Scope": "p", "Repository": "api", "Branch": "release", "Package": "A"},
+        {"Scope": "p", "Repository": "api", "Branch": "develop", "Package": "A"},
+        {"Scope": "p", "Repository": "lib", "Branch": "release", "Package": "A"},
     ]
 
     def select(self, branches):
@@ -231,9 +231,9 @@ class ProjectTypeTests(unittest.TestCase):
 
 class ActivityTests(unittest.TestCase):
     ROWS = [
-        {"Project": "p", "Repository": "api", "Branch": "release", "Package": "A"},
-        {"Project": "p", "Repository": "api", "Branch": "develop", "Package": "A"},
-        {"Project": "p", "Repository": "old", "Branch": "release", "Package": "A"},
+        {"Scope": "p", "Repository": "api", "Branch": "release", "Package": "A"},
+        {"Scope": "p", "Repository": "api", "Branch": "develop", "Package": "A"},
+        {"Scope": "p", "Repository": "old", "Branch": "release", "Package": "A"},
     ]
 
     def repositories(self, folder: str, text: str) -> Path:
@@ -244,13 +244,21 @@ class ActivityTests(unittest.TestCase):
     def test_only_the_recently_changed_repositories_and_branches_are_kept(self):
         with tempfile.TemporaryDirectory() as folder:
             path = self.repositories(folder,
-                "Project;Repository;Branch;Status;FilesExamined;References;Details;CommitDate\n"
+                "Scope;Repository;Branch;Status;FilesExamined;References;Details;CommitDate\n"
                 "p;api;release;OK;1;1;;2026-10-28T09:42:56Z\n"
                 "p;api;develop;OK;1;1;;2025-01-10T08:00:00Z\n"
                 "p;old;release;OK;1;1;;2024-03-01T08:00:00Z\n")
             rows = build_chart.select_active(self.ROWS, path, dt.date(2026, 1, 1))
         self.assertEqual([f"{r['Repository']} {r['Branch']}" for r in rows], ["api release"])
         self.assertEqual(build_chart.select_active(self.ROWS, None, None), self.ROWS)
+
+    def test_reports_older_than_1_0_name_the_scope_project(self):
+        rows = [{"Project": "p", "Repository": "api", "Branch": "release", "Package": "A"}]
+        with tempfile.TemporaryDirectory() as folder:
+            path = self.repositories(folder,
+                "Project;Repository;Branch;Status;FilesExamined;References;Details;CommitDate\n"
+                "p;api;release;OK;1;1;;2026-10-28T09:42:56Z\n")
+            self.assertEqual(build_chart.select_active(rows, path, dt.date(2026, 1, 1)), rows)
 
     def test_the_date_filter_needs_a_report_with_dates(self):
         with self.assertRaises(SystemExit) as raised:

@@ -105,7 +105,7 @@ public sealed class CommitDateTests
 
             Assert.Equal(
             [
-                "Project;Repository;Branch;Status;FilesExamined;References;Details;CommitDate",
+                "Scope;Repository;Branch;Status;FilesExamined;References;Details;CommitDate",
                 "project;api;main;OK;1;0;;2026-10-28T09:42:56Z",
                 "project;old;;Disabled;0;0;Repository disabled;"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "repositories.csv")));

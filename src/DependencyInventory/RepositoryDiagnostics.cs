@@ -6,7 +6,7 @@ namespace DependencyInventory;
 /// </summary>
 public sealed class RepositoryDiagnostic
 {
-    public string Project { get; init; } = "";
+    public string Scope { get; init; } = "";
     public string Repository { get; init; } = "";
     public string? SelectedBranch { get; set; }
     public string? Commit { get; set; }
@@ -28,7 +28,7 @@ public sealed class RepositoryDiagnostic
     {
         var copy = new RepositoryDiagnostic
         {
-            Project = Project, Repository = Repository, SelectedBranch = branch, Commit = Commit,
+            Scope = Scope, Repository = Repository, SelectedBranch = branch, Commit = Commit,
             CommitDate = CommitDate
         };
         copy.AvailableBranches.AddRange(AvailableBranches);
@@ -52,7 +52,7 @@ public sealed record FileDiagnostic(
 /// </summary>
 public sealed class FrameworkRepositoryDiagnostic
 {
-    public string Project { get; init; } = "";
+    public string Scope { get; init; } = "";
     public string Repository { get; init; } = "";
     public string? SelectedBranch { get; set; }
     public string? Commit { get; set; }
@@ -68,7 +68,7 @@ public sealed class FrameworkRepositoryDiagnostic
     {
         var copy = new FrameworkRepositoryDiagnostic
         {
-            Project = Project, Repository = Repository, SelectedBranch = branch, Commit = Commit,
+            Scope = Scope, Repository = Repository, SelectedBranch = branch, Commit = Commit,
             CommitDate = CommitDate
         };
         copy.AvailableBranches.AddRange(AvailableBranches);

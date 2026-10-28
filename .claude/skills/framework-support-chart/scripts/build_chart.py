@@ -248,6 +248,11 @@ def add_months(day: dt.date, months: int) -> dt.date:
     return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
 
 
+def scope(row: dict) -> str:
+    """The Azure DevOps project or GitLab group of a row: the Scope column, Project before depinv 1.0.0."""
+    return row.get("Scope") or row.get("Project") or ""
+
+
 def select_branches(rows: list[dict], branches: list[str], source: Path) -> list[dict]:
     """The rows of the branches matching one of the globs; all rows without any, with a warning when a repository
     has several branches, since its references would then be counted once per branch."""
@@ -256,7 +261,7 @@ def select_branches(rows: list[dict], branches: list[str], source: Path) -> list
                 if any(fnmatch.fnmatch((r.get("Branch") or "").lower(), b.lower()) for b in branches)]
     by_repository: dict[str, set[str]] = defaultdict(set)
     for row in rows:
-        by_repository[(row.get("Project") or "", row.get("Repository") or "")].add(row.get("Branch") or "")
+        by_repository[(scope(row), row.get("Repository") or "")].add(row.get("Branch") or "")
     several = sorted(repository for (_, repository), found in by_repository.items() if len(found) > 1)
     if several:
         shown = ", ".join(several[:3]) + (", ..." if len(several) > 3 else "")
@@ -289,10 +294,10 @@ def select_active(rows: list[dict], repositories: Path | None, since: dt.date | 
     if "CommitDate" not in columns:
         sys.exit(f"{repositories} has no CommitDate column: --active-since needs a report of depinv 1.0.0-preview.8 "
                  "or later.")
-    active = {(r.get("Project") or "", r.get("Repository") or "", r.get("Branch") or "") for r in coverage
+    active = {(scope(r), r.get("Repository") or "", r.get("Branch") or "") for r in coverage
               if r.get("CommitDate") and dt.date.fromisoformat(r["CommitDate"][:10]) >= since}
     return [r for r in rows
-            if (r.get("Project") or "", r.get("Repository") or "", r.get("Branch") or "") in active]
+            if (scope(r), r.get("Repository") or "", r.get("Branch") or "") in active]
 
 
 def main() -> None:

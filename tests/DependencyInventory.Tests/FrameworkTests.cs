@@ -229,7 +229,7 @@ public sealed class FrameworkTests
     [Fact]
     public async Task DiagnosticRecordsBranchesAndEveryFileExamined()
     {
-        var diagnostic = new FrameworkRepositoryDiagnostic { Project = "project", Repository = "broken" };
+        var diagnostic = new FrameworkRepositoryDiagnostic { Scope = "project", Repository = "broken" };
         await ScanAsync(Provider(), "broken", diagnostic);
 
         Assert.Equal("main", diagnostic.SelectedBranch);
@@ -272,12 +272,12 @@ public sealed class FrameworkTests
             var frameworks = await File.ReadAllLinesAsync(Path.Combine(directory, "frameworks.csv"));
             Assert.Equal(
             [
-                "Project;Repository;Branch;Commit;ProjectFile;Framework;FrameworkSource;Url;ProjectType",
+                "Scope;Repository;Branch;Commit;ProjectFile;Framework;FrameworkSource;Url;ProjectType",
                 "project;api;main;abc;/src/Api.csproj;net8.0;DirectoryBuildProps;https://example/api;Application",
                 "project;api;main;abc;/src/Lib.csproj;;Unresolved;https://example/lib;"
             ], frameworks);
             var repositories = await File.ReadAllLinesAsync(Path.Combine(directory, "repositories.csv"));
-            Assert.Equal("Project;Repository;Branch;Status;FilesExamined;Projects;Details;CommitDate", repositories[0]);
+            Assert.Equal("Scope;Repository;Branch;Status;FilesExamined;Projects;Details;CommitDate", repositories[0]);
             Assert.Equal("project;api;main;NoProjectFiles;3;2;;2026-10-28T09:42:56Z", repositories[1]);
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
             Assert.Contains("\"FrameworkSource\": \"DirectoryBuildProps\"", json);

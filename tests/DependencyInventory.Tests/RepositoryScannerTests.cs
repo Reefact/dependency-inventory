@@ -137,7 +137,7 @@ public sealed class RepositoryScannerTests
     [Fact]
     public async Task DiagnosticRecordsBranchesAndEveryFileExamined()
     {
-        var diagnostic = new RepositoryDiagnostic { Project = "project", Repository = "broken" };
+        var diagnostic = new RepositoryDiagnostic { Scope = "project", Repository = "broken" };
         await ScanAsync(Provider(), "broken", diagnostic);
 
         Assert.Equal("main", diagnostic.SelectedBranch);

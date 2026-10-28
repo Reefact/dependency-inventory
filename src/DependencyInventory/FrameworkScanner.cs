@@ -63,7 +63,7 @@ public static class FrameworkScanner
         FrameworkRepositoryDiagnostic? NewDiagnostic()
         {
             var created = diagnostic ?? (collectDiagnostics
-                ? new FrameworkRepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
+                ? new FrameworkRepositoryDiagnostic { Scope = repo.Project, Repository = repo.Name }
                 : null);
             diagnostic = null;
             return created;
