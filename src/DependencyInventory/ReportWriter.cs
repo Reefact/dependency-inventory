@@ -121,7 +121,7 @@ public static class ReportWriter
     {
         var m = x.Metadata;
         return [x.Package, x.Version, x.Status.ToString(), x.Details ?? "", x.FrameworksFrom?.ToString() ?? "",
-            x.Published?.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            Date(x.Published),
             x.Listed switch { true => "true", false => "false", null => "" }, string.Join(" | ", x.Views ?? []),
             m?.Id ?? "", m?.Title ?? "", m?.Authors ?? "", m?.Owners ?? "", m?.Description ?? "", m?.Summary ?? "",
             m?.ReleaseNotes ?? "", m?.Copyright ?? "", m?.Language ?? "", m?.Tags ?? "", m?.ProjectUrl ?? "",

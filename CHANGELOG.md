@@ -21,6 +21,11 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   2, and scans print it and ask for the credentials. `--credentials-file` remains available on macOS, for unattended
   runs.
 
+### Fixed
+
+- **The Published column of `packages.csv` is always in UTC.** A publication date read with another offset was
+  written with its local time followed by `Z`.
+
 ## [1.0.0-preview.8] - 2026-10-28
 
 ### Added
