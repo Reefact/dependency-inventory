@@ -13,6 +13,9 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
 
     public List<Repository> Repositories { get; } = [];
 
+    /// <summary>Paths of the files read, in any order.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<string> FilesRead { get; } = new();
+
     /// <summary>Delay of every call, so parallel calls overlap.</summary>
     public TimeSpan Latency { get; init; }
 
@@ -56,10 +59,13 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
             .Append(new GitFile("/src", true))
             .ToArray(), ct);
 
-    public Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct) =>
-        CallAsync(() => _failingFiles.TryGetValue((repositoryId, path), out var error)
+    public Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct)
+    {
+        FilesRead.Enqueue(path);
+        return CallAsync(() => _failingFiles.TryGetValue((repositoryId, path), out var error)
             ? throw error
             : _files[repositoryId][path], ct);
+    }
 
     private async Task<T> CallAsync<T>(Func<T> call, CancellationToken ct)
     {

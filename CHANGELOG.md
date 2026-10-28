@@ -8,6 +8,12 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`depinv packages` no longer reads source files for packages it cannot read.** The C# files of a project are
+  only read when at least one package it references was found in a source. A scan of internal packages without
+  `--feed`, whose usage is undetermined anyway, is about as fast again as before 1.0.0-preview.5.
+
 ## [1.0.0-preview.5] - 2026-10-28
 
 ### Added
