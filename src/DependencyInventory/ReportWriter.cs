@@ -20,22 +20,26 @@ public static class ReportWriter
         await File.WriteAllTextAsync(Path.Combine(absolute, "report.json"),
             json, new UTF8Encoding(false), ct);
 
-        var columns = new[]
-        {
-            "Scope", "Repository", "Branch", "Commit", "File", "Package",
-            "Version", "Kind", "VersionSource", "MatchedFilters", "Url"
-        };
         var references = report.Occurrences.Where(x => x.Kind == PackageKind.Reference).ToArray();
         await WriteCsvAsync(Path.Combine(absolute, "dependencies.csv"),
-            [.. columns, "Usage", "Source", "Feed", "ProjectType"],
-            references.Select(x => (string[])[.. ToColumns(x), x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "",
-                x.Feed ?? "", x.ProjectType?.ToString() ?? ""]), ct);
-        await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"), columns,
-            report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(ToColumns), ct);
+            ["Scope", "Repository", "Branch", "Commit", "File", "ProjectType", "Package", "Version", "VersionSource",
+                "MatchedFilters", "Usage", "Source", "Feed", "Url"],
+            references.Select(x => new[] { x.Scope, x.Repository, x.Branch, x.Commit, x.File,
+                x.ProjectType?.ToString() ?? "", x.Package, x.Version ?? "", x.VersionSource.ToString(),
+                string.Join(" | ", x.MatchedFilters), x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "",
+                x.Feed ?? "", x.Url }), ct);
+        await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"),
+            ["Scope", "Repository", "Branch", "Commit", "File", "Package", "Version", "VersionSource", "MatchedFilters",
+                "Url"],
+            report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(x => new[] { x.Scope,
+                x.Repository, x.Branch, x.Commit, x.File, x.Package, x.Version ?? "", x.VersionSource.ToString(),
+                string.Join(" | ", x.MatchedFilters), x.Url }), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
-            ["Scope", "Repository", "Branch", "Status", "FilesExamined", "References", "Details", "CommitDate"],
-            report.Coverage.Select(x => new[] { x.Scope, x.Repository, x.Branch ?? "", x.Status.ToString(),
-                x.FilesExamined.ToString(), x.References.ToString(), x.Details ?? "", Date(x.CommitDate) }), ct);
+            ["Scope", "Repository", "Branch", "Commit", "CommitDate", "Status", "FilesExamined", "References", "Details",
+                "Url"],
+            report.Coverage.Select(x => new[] { x.Scope, x.Repository, x.Branch ?? "", x.Commit ?? "",
+                Date(x.CommitDate), x.Status.ToString(), x.FilesExamined.ToString(), x.References.ToString(),
+                x.Details ?? "", x.Url ?? "" }), ct);
         // Without --used-types, the file of a previous run in the same folder would look like part of this report.
         var usedTypesFile = Path.Combine(absolute, "used-types.csv");
         if (!usedTypes) File.Delete(usedTypesFile);
@@ -51,12 +55,12 @@ public static class ReportWriter
         if (report.TransitiveDependencies is not { } transitive) File.Delete(transitiveFile);
         else
             await WriteCsvAsync(transitiveFile,
-                ["Scope", "Repository", "Branch", "Commit", "File", "Framework", "Package", "Version", "Via",
-                    "Resolution", "MatchedFilters", "Usage", "Source", "Feed", "ProjectType"],
-                transitive.Select(x => new[] { x.Scope, x.Repository, x.Branch, x.Commit, x.File, x.Framework ?? "",
-                    x.Package, x.Version, x.Via, x.Resolution.ToString(), string.Join(" | ", x.MatchedFilters),
-                    x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "", x.Feed ?? "",
-                    x.ProjectType?.ToString() ?? "" }), ct);
+                ["Scope", "Repository", "Branch", "Commit", "File", "ProjectType", "Framework", "Package", "Version",
+                    "Via", "Resolution", "MatchedFilters", "Usage", "Source", "Feed"],
+                transitive.Select(x => new[] { x.Scope, x.Repository, x.Branch, x.Commit, x.File,
+                    x.ProjectType?.ToString() ?? "", x.Framework ?? "", x.Package, x.Version, x.Via,
+                    x.Resolution.ToString(), string.Join(" | ", x.MatchedFilters), x.Usage?.ToString() ?? "",
+                    x.Source?.ToString() ?? "", x.Feed ?? "" }), ct);
         return absolute;
     }
 
@@ -70,14 +74,16 @@ public static class ReportWriter
             json, new UTF8Encoding(false), ct);
 
         await WriteCsvAsync(Path.Combine(absolute, "frameworks.csv"),
-            ["Scope", "Repository", "Branch", "Commit", "ProjectFile", "Framework", "FrameworkSource", "Url",
-                "ProjectType"],
+            ["Scope", "Repository", "Branch", "Commit", "ProjectFile", "ProjectType", "Framework", "FrameworkSource",
+                "Url"],
             report.Frameworks.Select(x => new[] { x.Scope, x.Repository, x.Branch, x.Commit, x.ProjectFile,
-                x.Framework ?? "", x.FrameworkSource.ToString(), x.Url, x.ProjectType?.ToString() ?? "" }), ct);
+                x.ProjectType?.ToString() ?? "", x.Framework ?? "", x.FrameworkSource.ToString(), x.Url }), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
-            ["Scope", "Repository", "Branch", "Status", "FilesExamined", "Projects", "Details", "CommitDate"],
-            report.Coverage.Select(x => new[] { x.Scope, x.Repository, x.Branch ?? "", x.Status.ToString(),
-                x.FilesExamined.ToString(), x.Projects.ToString(), x.Details ?? "", Date(x.CommitDate) }), ct);
+            ["Scope", "Repository", "Branch", "Commit", "CommitDate", "Status", "FilesExamined", "Projects", "Details",
+                "Url"],
+            report.Coverage.Select(x => new[] { x.Scope, x.Repository, x.Branch ?? "", x.Commit ?? "",
+                Date(x.CommitDate), x.Status.ToString(), x.FilesExamined.ToString(), x.Projects.ToString(),
+                x.Details ?? "", x.Url ?? "" }), ct);
         return absolute;
     }
 
@@ -135,11 +141,6 @@ public static class ReportWriter
     private static string Date(DateTimeOffset? date) =>
         date?.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
         ?? "";
-
-    private static string[] ToColumns(PackageOccurrence x) =>
-        [x.Scope, x.Repository, x.Branch, x.Commit, x.File,
-            x.Package, x.Version ?? "", x.Kind.ToString(), x.VersionSource.ToString(),
-            string.Join(" | ", x.MatchedFilters), x.Url];
 
     private static async Task WriteCsvAsync(
         string path, IEnumerable<string> header, IEnumerable<string[]> rows, CancellationToken ct)

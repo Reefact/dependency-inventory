@@ -136,12 +136,13 @@ Each dependency appears once per declaration, even when it matches several filte
 
 The dependency-report folder (configurable with --output) contains:
 
-- dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters, the
-  usage of the package: Usage, Source and Feed (see [Package usage](#-package-usage)), and the ProjectType of the
-  project that declares it (see [Project types](#project-types));
-- central-versions.csv: central version declarations matching the filters;
-- repositories.csv: coverage of every repository found and its scan status, with the CommitDate of the scanned commit
-  (see [Activity](#activity));
+- dependencies.csv: filtered direct references: Scope, Repository, Branch, Commit, File, ProjectType (see
+  [Project types](#project-types)), Package, Version, VersionSource, MatchedFilters, the usage of the package: Usage,
+  Source and Feed (see [Package usage](#-package-usage)), and Url;
+- central-versions.csv: central version declarations matching the filters: Scope, Repository, Branch, Commit, File,
+  Package, Version, VersionSource, MatchedFilters and Url;
+- repositories.csv: coverage of every repository found: Scope, Repository, Branch, Commit, CommitDate (see
+  [Activity](#activity)), its scan Status, FilesExamined, References, Details and the Url of the repository;
 - used-types.csv: with --used-types only, the types of each package referenced by the code;
 - transitive-dependencies.csv: with --transitive only, the packages each project depends on without declaring them
   (see [Transitive dependencies](#-transitive-dependencies));
@@ -240,7 +241,7 @@ depinv packages --provider azure --url "https://dev.azure.com/Organization/Proje
 
 Every declared reference takes part in the graph, whether it matches the filters or not; only the transitive packages
 matching them are written to transitive-dependencies.csv: Scope, Repository, Branch, Commit, File (the project file),
-Framework, Package, Version, Via, Resolution, MatchedFilters, Usage, Source, Feed and ProjectType. dependencies.csv keeps the
+ProjectType, Framework, Package, Version, Via, Resolution, MatchedFilters, Usage, Source and Feed. dependencies.csv keeps the
 declared references only.
 
 - Via is the path from the declared reference to the package, such as A > B > Y.
@@ -279,10 +280,10 @@ depinv frameworks --provider azure --url "https://dev.azure.com/Organization/Pro
 It takes the same options as `depinv packages` except the filters (`--pattern`, `--regex`, `--case-sensitive`).
 The framework-report folder (configurable with --output) contains:
 
-- frameworks.csv: one line per project file and target framework: ProjectFile, Framework, FrameworkSource, branch, commit,
-  and its ProjectType (see [Project types](#project-types));
-- repositories.csv: coverage of every repository found and its scan status, with the number of projects found and the
-  CommitDate of the scanned commit (see [Activity](#activity));
+- frameworks.csv: one line per project file and target framework: Scope, Repository, Branch, Commit, ProjectFile,
+  ProjectType (see [Project types](#project-types)), Framework, FrameworkSource and Url;
+- repositories.csv: coverage of every repository found, as for `depinv packages`, with the number of Projects found
+  instead of References;
 - report.json: full JSON report.
 
 Files: *.csproj, *.fsproj, *.vbproj and Directory.Build.props, outside the bin, obj, node_modules and .git folders.

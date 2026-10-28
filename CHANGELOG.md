@@ -27,6 +27,21 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   `transitive-dependencies.csv`, `frameworks.csv` and `repositories.csv`, and so is the field in `report.json` and
   `diagnostics.json`. It holds the Azure DevOps project or the GitLab group, and was easily mistaken for the .NET
   project that ProjectType describes.
+- **Breaking: the columns of the reports are reordered**, from the repository to the package and its usage, with the
+  link last:
+  - `dependencies.csv`: Scope, Repository, Branch, Commit, File, ProjectType, Package, Version, VersionSource,
+    MatchedFilters, Usage, Source, Feed, Url;
+  - `central-versions.csv`: Scope, Repository, Branch, Commit, File, Package, Version, VersionSource, MatchedFilters,
+    Url;
+  - `transitive-dependencies.csv`: Scope, Repository, Branch, Commit, File, ProjectType, Framework, Package, Version,
+    Via, Resolution, MatchedFilters, Usage, Source, Feed;
+  - `frameworks.csv`: Scope, Repository, Branch, Commit, ProjectFile, ProjectType, Framework, FrameworkSource, Url;
+  - `repositories.csv`: Scope, Repository, Branch, Commit, CommitDate, Status, FilesExamined, References (Projects for
+    `depinv frameworks`), Details, Url.
+- **Breaking: the Kind column is removed from `dependencies.csv` and `central-versions.csv`**, where it always held
+  `Reference` and `CentralVersion`. `report.json`, which holds both kinds, keeps it.
+- **`repositories.csv` gives the Commit scanned and the Url of each repository**, as `report.json` does, so that the
+  lines of several branches can be told apart.
 
 ### Fixed
 

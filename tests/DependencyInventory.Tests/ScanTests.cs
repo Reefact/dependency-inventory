@@ -163,9 +163,10 @@ public sealed class ScanTests
         {
             await ReportWriter.SaveAsync(report, directory, CancellationToken.None);
 
-            Assert.Contains(";Reference;Central;",
+            // The CSV files keep one kind each: the Kind is only written to report.json.
+            Assert.Contains(";2.0.0;Central;",
                 await File.ReadAllTextAsync(Path.Combine(directory, "dependencies.csv")));
-            Assert.Contains(";CentralVersion;Explicit;",
+            Assert.Contains(";2.0.0;Explicit;",
                 await File.ReadAllTextAsync(Path.Combine(directory, "central-versions.csv")));
             Assert.Contains(";Partial;",
                 await File.ReadAllTextAsync(Path.Combine(directory, "repositories.csv")));
@@ -183,7 +184,7 @@ public sealed class ScanTests
     }
 
     [Fact]
-    public async Task UsageColumnsAreAppendedToDependenciesOnlyAndUsedTypesAreOnlyWrittenOnRequest()
+    public async Task UsageColumnsAreWrittenToDependenciesOnlyAndUsedTypesAreOnlyWrittenOnRequest()
     {
         PackageOccurrence Occurrence(PackageKind kind, string file) =>
             new("project", "api", "main", "abc", file, "Stime.Web", "2.0.0", kind, VersionSource.Explicit,
@@ -205,10 +206,10 @@ public sealed class ScanTests
 
             Assert.Equal(
             [
-                "Scope;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url;Usage;Source;Feed;ProjectType",
-                "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Reference;Explicit;Glob:Stime.*;https://example/web;Used;Feed;Shared/libs;Application"
+                "Scope;Repository;Branch;Commit;File;ProjectType;Package;Version;VersionSource;MatchedFilters;Usage;Source;Feed;Url",
+                "project;api;main;abc;/src/Api.csproj;Application;Stime.Web;2.0.0;Explicit;Glob:Stime.*;Used;Feed;Shared/libs;https://example/web"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "dependencies.csv")));
-            Assert.Equal("Scope;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url",
+            Assert.Equal("Scope;Repository;Branch;Commit;File;Package;Version;VersionSource;MatchedFilters;Url",
                 (await File.ReadAllLinesAsync(Path.Combine(directory, "central-versions.csv")))[0]);
             Assert.Equal(
             [
