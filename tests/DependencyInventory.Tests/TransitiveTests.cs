@@ -421,7 +421,8 @@ public sealed class TransitiveTests
         var occurrence = new PackageOccurrence("project", "api", "main", "abc", "/App.csproj", "A", "1.0.0",
             PackageKind.Reference, VersionSource.Explicit, ["Glob:*"], "https://example/app");
         var transitive = new TransitiveDependency("project", "api", "main", "abc", "/App.csproj", "net8.0", "E", "1.0.0",
-            "A > B > E", DependencyResolution.Computed, ["Glob:*"], PackageUsage.Used, PackageSource.NuGetOrg);
+            "A > B > E", DependencyResolution.Computed, ["Glob:*"], PackageUsage.Used, PackageSource.NuGetOrg,
+            Roots: ["A"]);
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         try
         {
@@ -438,8 +439,9 @@ public sealed class TransitiveTests
                 "Project;Repository;Branch;Commit;File;Framework;Package;Version;Via;Resolution;MatchedFilters;Usage;Source;Feed;ProjectType",
                 "project;api;main;abc;/App.csproj;net8.0;E;1.0.0;A > B > E;Computed;Glob:*;Used;NuGetOrg;;"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "transitive-dependencies.csv")));
-            Assert.Contains("\"Resolution\": \"Computed\"",
-                await File.ReadAllTextAsync(Path.Combine(directory, "report.json")));
+            var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
+            Assert.Contains("\"Resolution\": \"Computed\"", json);
+            Assert.DoesNotContain("Roots", json);
 
             // A later run without --transitive in the same folder leaves no stale file behind.
             await ReportWriter.SaveAsync(without, directory, CancellationToken.None);

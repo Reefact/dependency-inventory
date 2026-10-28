@@ -5,12 +5,17 @@ namespace DependencyInventory.Tests;
 public sealed class UsedTransitivelyTests
 {
     /// <summary>
-    /// Messaging has types of its own and brings Telemetry, which has types too; Tools has types and brings nothing.
+    /// Messaging and Events have types of their own and bring Telemetry, which has types too; Tools has types and brings
+    /// nothing; Bundle has types and brings Messaging.
     /// </summary>
     private static PackageCatalog Catalog() => new([new PackageSourceEntry(new FakePackageFeed { Origin = "https://api.nuget.org/v3/index.json" }
         .Package("Messaging", "1.0.0", """<dependency id="Telemetry" version="1.0.0" />""",
             types: "namespace Contoso.Messaging { public class Bus { } }")
         .Package("Telemetry", "1.0.0", types: "namespace Contoso.Telemetry { public class Tracer { } }")
+        .Package("Events", "1.0.0", """<dependency id="Telemetry" version="1.0.0" />""",
+            types: "namespace Contoso.Events { public class Event { } }")
+        .Package("Bundle", "1.0.0", """<dependency id="Messaging" version="1.0.0" />""",
+            types: "namespace Contoso.Bundle { public class Kit { } }")
         .Package("Tools", "1.0.0", types: "namespace Contoso.Tools { public class Hammer { } }"),
         PackageSource.NuGetOrg, null)]);
 
@@ -55,7 +60,7 @@ public sealed class UsedTransitivelyTests
         Assert.Equal(PackageUsage.Used, result.TransitiveDependencies!.Single(t => t.Package == "Telemetry").Usage);
         var usage = diagnostic.Usages.Single(u => u.Package == "Messaging");
         Assert.Equal(PackageUsage.UsedTransitively, usage.Usage);
-        Assert.Equal("No type of its own is used, but it brings Telemetry, which the code uses.", usage.Reason);
+        Assert.Equal("No type of its own is used, but it is the only reference bringing Telemetry, which the code uses.", usage.Reason);
     }
 
     [Fact]
@@ -139,5 +144,85 @@ public sealed class UsedTransitivelyTests
 
         Assert.Equal(PackageUsage.Unused, result.Occurrences.Single(o => o.File == "/App/App.csproj").Usage);
         Assert.Equal(PackageUsage.UsedTransitively, result.Occurrences.Single(o => o.File == "/Other/Other.csproj").Usage);
+    }
+
+    private static string ProjectWith(params string[] packages) => $"""
+        <Project Sdk="Microsoft.NET.Sdk">
+          <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+          <ItemGroup>{string.Concat(packages.Select(p => $"""<PackageReference Include="{p}" Version="1.0.0" />"""))}</ItemGroup>
+        </Project>
+        """;
+
+    [Fact]
+    public async Task TwoReferencesBringingTheSamePackageAreNeitherIndispensable()
+    {
+        var (result, diagnostic) = await ScanAsync(new()
+        {
+            ["/App/App.csproj"] = ProjectWith("Messaging", "Events"),
+            ["/App/Program.cs"] = UsesTelemetry
+        });
+
+        // Removing either one keeps Telemetry through the other: neither is reported as needed.
+        Assert.Equal(PackageUsage.Unused, Usage(result, "Messaging"));
+        Assert.Equal(PackageUsage.Unused, Usage(result, "Events"));
+        Assert.Equal(["Messaging", "Events"], result.TransitiveDependencies!.Single(t => t.Package == "Telemetry").Roots);
+        Assert.Equal("No type of its own is used; it brings Telemetry, which the code uses, but so do Events.",
+            diagnostic.Usages.Single(u => u.Package == "Messaging").Reason);
+    }
+
+    [Fact]
+    public async Task AReferenceWhosePackageIsAlsoBroughtByAUsedReferenceStaysUnused()
+    {
+        var (result, _) = await ScanAsync(new()
+        {
+            ["/App/App.csproj"] = ProjectWith("Messaging", "Events"),
+            ["/App/Program.cs"] = "using Contoso.Events; using Contoso.Telemetry; class Program { Event e; Tracer tracer; }"
+        });
+
+        Assert.Equal(PackageUsage.Used, Usage(result, "Events"));
+        Assert.Equal(PackageUsage.Unused, Usage(result, "Messaging"));
+    }
+
+    [Fact]
+    public async Task ALockFileGivesEveryReferenceBringingThePackage()
+    {
+        var (result, _) = await ScanAsync(new()
+        {
+            ["/App/App.csproj"] = ProjectWith("Messaging", "Events"),
+            ["/App/Program.cs"] = UsesTelemetry,
+            ["/App/packages.lock.json"] = """
+                {
+                  "version": 1,
+                  "dependencies": {
+                    "net8.0": {
+                      "Messaging": { "type": "Direct", "requested": "[1.0.0, )", "resolved": "1.0.0", "dependencies": { "Telemetry": "1.0.0" } },
+                      "Events": { "type": "Direct", "requested": "[1.0.0, )", "resolved": "1.0.0" },
+                      "Telemetry": { "type": "Transitive", "resolved": "1.0.0" }
+                    }
+                  }
+                }
+                """
+        });
+
+        var telemetry = result.TransitiveDependencies!.Single(t => t.Package == "Telemetry");
+        Assert.Equal(DependencyResolution.LockFile, telemetry.Resolution);
+        Assert.Equal(["Messaging"], telemetry.Roots);
+        Assert.Equal(PackageUsage.UsedTransitively, Usage(result, "Messaging"));
+        Assert.Equal(PackageUsage.Unused, Usage(result, "Events"));
+    }
+
+    [Fact]
+    public async Task ThePathsThroughAnotherDeclaredReferenceCount()
+    {
+        // Messaging is declared, but Bundle brings it too, and Telemetry with it: removing Messaging keeps Telemetry.
+        var (result, _) = await ScanAsync(new()
+        {
+            ["/App/App.csproj"] = ProjectWith("Messaging", "Bundle"),
+            ["/App/Program.cs"] = UsesTelemetry
+        });
+
+        Assert.Equal(["Messaging", "Bundle"], result.TransitiveDependencies!.Single(t => t.Package == "Telemetry").Roots);
+        Assert.Equal(PackageUsage.Unused, Usage(result, "Messaging"));
+        Assert.Equal(PackageUsage.Unused, Usage(result, "Bundle"));
     }
 }
