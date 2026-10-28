@@ -159,6 +159,22 @@ internal static class RepositoryWalker
     }
 
     /// <summary>
+    /// The committer date of the branch's commit, or none and the reason it could not be read: the inventory itself
+    /// does not depend on it.
+    /// </summary>
+    public static async Task<(DateTimeOffset? Date, string? Error)> CommitDateAsync(IRepositoryProvider api,
+        Repository repo, GitBranch branch, CancellationToken ct)
+    {
+        try { return (await api.GetCommitDateAsync(repo.Id, branch.ObjectId, ct), null); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex) { return (null, $"Commit date not read: {ex.Message}"); }
+    }
+
+    /// <summary>The details of a coverage, with one more appended.</summary>
+    public static string? AddDetail(string? details, string? detail) =>
+        detail is null ? details : details is null ? detail : $"{details} | {detail}";
+
+    /// <summary>
     /// Reads and parses the files of <paramref name="branch"/> that <paramref name="isInteresting"/> keeps. A file
     /// that cannot be read or parsed is returned with its error; a tree failure is thrown.
     /// </summary>
@@ -308,8 +324,17 @@ public static class RepositoryScanner
                     branchDiagnostic.SelectedBranch = branch.Name;
                     branchDiagnostic.Commit = branch.ObjectId;
                 }
-                return (await ScanCommitAsync(reader, repo, branch, matcher, branchDiagnostic, ct, fileParallelism,
-                    usage, transitive), branchDiagnostic);
+                var (date, dateError) = await RepositoryWalker.CommitDateAsync(reader, repo, branch, ct);
+                if (branchDiagnostic is not null) branchDiagnostic.CommitDate = date;
+                var scan = await ScanCommitAsync(reader, repo, branch, matcher, branchDiagnostic, ct, fileParallelism,
+                    usage, transitive);
+                return (scan with
+                {
+                    Coverage = scan.Coverage with
+                    {
+                        CommitDate = date, Details = RepositoryWalker.AddDetail(scan.Coverage.Details, dateError)
+                    }
+                }, branchDiagnostic);
             },
             (done, branch) => (done.Scan.OnBranch(branch.Name), done.Diagnostic?.OnBranch(branch.Name)));
     }

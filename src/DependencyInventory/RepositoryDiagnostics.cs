@@ -10,6 +10,7 @@ public sealed class RepositoryDiagnostic
     public string Repository { get; init; } = "";
     public string? SelectedBranch { get; set; }
     public string? Commit { get; set; }
+    public DateTimeOffset? CommitDate { get; set; }
     public List<string> AvailableBranches { get; } = [];
     public List<FileDiagnostic> Files { get; } = [];
 
@@ -27,7 +28,8 @@ public sealed class RepositoryDiagnostic
     {
         var copy = new RepositoryDiagnostic
         {
-            Project = Project, Repository = Repository, SelectedBranch = branch, Commit = Commit
+            Project = Project, Repository = Repository, SelectedBranch = branch, Commit = Commit,
+            CommitDate = CommitDate
         };
         copy.AvailableBranches.AddRange(AvailableBranches);
         copy.Files.AddRange(Files);
@@ -54,6 +56,7 @@ public sealed class FrameworkRepositoryDiagnostic
     public string Repository { get; init; } = "";
     public string? SelectedBranch { get; set; }
     public string? Commit { get; set; }
+    public DateTimeOffset? CommitDate { get; set; }
     public List<string> AvailableBranches { get; } = [];
     public List<FrameworkFileDiagnostic> Files { get; } = [];
 
@@ -65,7 +68,8 @@ public sealed class FrameworkRepositoryDiagnostic
     {
         var copy = new FrameworkRepositoryDiagnostic
         {
-            Project = Project, Repository = Repository, SelectedBranch = branch, Commit = Commit
+            Project = Project, Repository = Repository, SelectedBranch = branch, Commit = Commit,
+            CommitDate = CommitDate
         };
         copy.AvailableBranches.AddRange(AvailableBranches);
         copy.Files.AddRange(Files);

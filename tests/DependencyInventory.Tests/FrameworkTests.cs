@@ -262,7 +262,8 @@ public sealed class FrameworkTests
                 new("project", "api", "main", "abc", "/src/Lib.csproj", null, FrameworkSource.Unresolved,
                     "https://example/lib")
             ],
-            [new("project", "api", "main", CoverageStatus.NoProjectFiles, 3, 2, null)]);
+            [new("project", "api", "main", CoverageStatus.NoProjectFiles, 3, 2, null,
+                new DateTimeOffset(2026, 10, 28, 11, 42, 56, TimeSpan.FromHours(2)))]);
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         try
         {
@@ -276,8 +277,8 @@ public sealed class FrameworkTests
                 "project;api;main;abc;/src/Lib.csproj;;Unresolved;https://example/lib;"
             ], frameworks);
             var repositories = await File.ReadAllLinesAsync(Path.Combine(directory, "repositories.csv"));
-            Assert.Equal("Project;Repository;Branch;Status;FilesExamined;Projects;Details", repositories[0]);
-            Assert.Equal("project;api;main;NoProjectFiles;3;2;", repositories[1]);
+            Assert.Equal("Project;Repository;Branch;Status;FilesExamined;Projects;Details;CommitDate", repositories[0]);
+            Assert.Equal("project;api;main;NoProjectFiles;3;2;;2026-10-28T09:42:56Z", repositories[1]);
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
             Assert.Contains("\"FrameworkSource\": \"DirectoryBuildProps\"", json);
         }

@@ -106,6 +106,19 @@ public sealed class AzureDevOpsClient : IDisposable
         $"{_origin.RootUrl}/_git/{Uri.EscapeDataString(repo.Name)}?path={Uri.EscapeDataString(path)}" +
         $"&version=GB{Uri.EscapeDataString(branch)}";
 
+    public async Task<DateTimeOffset?> GetCommitDateAsync(string repoId, string commitId, CancellationToken ct)
+    {
+        using var document = await ReadJsonAsync(
+            $"{RepoApi(repoId)}/commits/{Uri.EscapeDataString(commitId)}?api-version=7.1", ct);
+        return CommitDate(document.RootElement);
+    }
+
+    /// <summary>The committer date of a commit as Azure DevOps returns it; none when it is missing.</summary>
+    public static DateTimeOffset? CommitDate(JsonElement commit) =>
+        commit.TryGetProperty("committer", out var committer) && committer.ValueKind == JsonValueKind.Object &&
+        committer.TryGetProperty("date", out var date) && date.ValueKind == JsonValueKind.String &&
+        date.TryGetDateTimeOffset(out var value) ? value.ToUniversalTime() : null;
+
     private string RepoApi(string repoId) =>
         $"{_origin.RootUrl}/_apis/git/repositories/{Uri.EscapeDataString(repoId)}";
 

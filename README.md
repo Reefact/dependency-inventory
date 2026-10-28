@@ -136,7 +136,8 @@ The dependency-report folder (configurable with --output) contains:
   usage of the package: Usage, Source and Feed (see [Package usage](#-package-usage)), and the ProjectType of the
   project that declares it (see [Project types](#project-types));
 - central-versions.csv: central version declarations matching the filters;
-- repositories.csv: coverage of every repository found and its scan status;
+- repositories.csv: coverage of every repository found and its scan status, with the CommitDate of the scanned commit
+  (see [Activity](#activity));
 - used-types.csv: with --used-types only, the types of each package referenced by the code;
 - transitive-dependencies.csv: with --transitive only, the packages each project depends on without declaring them
   (see [Transitive dependencies](#-transitive-dependencies));
@@ -267,7 +268,8 @@ The framework-report folder (configurable with --output) contains:
 
 - frameworks.csv: one line per project file and target framework: ProjectFile, Framework, FrameworkSource, branch, commit,
   and its ProjectType (see [Project types](#project-types));
-- repositories.csv: coverage of every repository found and its scan status, with the number of projects found;
+- repositories.csv: coverage of every repository found and its scan status, with the number of projects found and the
+  CommitDate of the scanned commit (see [Activity](#activity));
 - report.json: full JSON report.
 
 Files: *.csproj, *.fsproj, *.vbproj and Directory.Build.props, outside the bin, obj, node_modules and .git folders.
@@ -395,6 +397,10 @@ Every project file gets a ProjectType, written in dependencies.csv, transitive-d
 
 OutputType, IsTestProject, AzureFunctionsVersion and the test framework references come from the project file, then from the nearest Directory.Build.props, the one MSBuild imports; a property of the project wins, even declared empty, while a test framework referenced by that Directory.Build.props makes a test whatever IsTestProject says. A packages.config takes the type of the project file next to it. A reference declared in a file shared by several projects, such as Directory.Build.props, has no ProjectType. These rules are heuristics: with --diagnostics, diagnostics.json gives under Projects the rule that classified every project file.
 
+### Activity
+
+repositories.csv gives, in its CommitDate column, the committer date of the scanned commit: the day its last change landed on the scanned branch, in UTC (2026-10-28T09:42:56Z). It tells a repository changed last week from one untouched for years. The column is empty for a repository that was not scanned (Disabled, NoBranch, or a failure before its branch was read). Reading the date takes one more GET request per scanned commit; when it fails, the date stays empty and Details says why, without changing the status.
+
 ### NuGet extraction
 
 Files: *.csproj, *.fsproj, *.vbproj, *.props, *.targets and packages.config. The bin, obj, node_modules and .git folders are ignored.
@@ -428,7 +434,7 @@ The 120 s timeout applies to each attempt, including the time needed to read the
 depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --repository api-order-bo --diagnostics
 ~~~
 
-The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined, and in Usages how the usage of every reference was decided: the projects and source files analyzed, where the package was read from (Cache, GlobalPackagesFolder or the source), and the reason of an Undetermined or BuildOnly usage. With `depinv frameworks`, it lists the frameworks declared by every file examined instead.
+The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and their dates and the files examined, and in Usages how the usage of every reference was decided: the projects and source files analyzed, where the package was read from (Cache, GlobalPackagesFolder or the source), and the reason of an Undetermined or BuildOnly usage. With `depinv frameworks`, it lists the frameworks declared by every file examined instead.
 
 ## 🤝 Contributing
 

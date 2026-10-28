@@ -278,6 +278,23 @@ def select_project_types(rows: list[dict], columns: list[str], types: list[str],
     return [r for r in rows if (r.get("ProjectType") or "").lower() in wanted]
 
 
+def select_active(rows: list[dict], repositories: Path | None, since: dt.date | None) -> list[dict]:
+    """The rows of the repositories and branches whose scanned commit dates from `since` or later, as
+    repositories.csv gives it; all rows without `since`."""
+    if since is None:
+        return rows
+    if repositories is None:
+        sys.exit("--active-since needs --repositories, the repositories.csv of the same scan.")
+    columns, coverage = read_csv_with_columns(repositories)
+    if "CommitDate" not in columns:
+        sys.exit(f"{repositories} has no CommitDate column: --active-since needs a report of depinv 1.0.0-preview.8 "
+                 "or later.")
+    active = {(r.get("Project") or "", r.get("Repository") or "", r.get("Branch") or "") for r in coverage
+              if r.get("CommitDate") and dt.date.fromisoformat(r["CommitDate"][:10]) >= since}
+    return [r for r in rows
+            if (r.get("Project") or "", r.get("Repository") or "", r.get("Branch") or "") in active]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dependencies", type=Path, required=True, help="dependencies.csv of depinv packages")
@@ -292,6 +309,11 @@ def main() -> None:
     parser.add_argument("--project-type", action="append", default=[],
                         help="only the references of projects of this type (repeatable): Application, Library, "
                              "Test, Sample or Unknown, from the ProjectType column of depinv 1.0.0-preview.8 and later")
+    parser.add_argument("--repositories", type=Path,
+                        help="repositories.csv of depinv packages, which gives the date of every scanned commit")
+    parser.add_argument("--active-since", type=dt.date.fromisoformat,
+                        help="only the repositories whose scanned commit is this recent, YYYY-MM-DD; needs "
+                             "--repositories")
     parser.add_argument("--lang", choices=sorted(TEXT), default="en", help="language of the chart texts")
     parser.add_argument("--as-of", type=dt.date.fromisoformat, default=dt.date.today(),
                         help="date of the support status, YYYY-MM-DD; today by default")
@@ -316,6 +338,7 @@ def main() -> None:
     unresolved = 0
     dependency_columns, dependency_rows = read_csv_with_columns(args.dependencies)
     dependency_rows = select_project_types(dependency_rows, dependency_columns, args.project_type, args.dependencies)
+    dependency_rows = select_active(dependency_rows, args.repositories, args.active_since)
     dependency_rows = select_branches(dependency_rows, args.branch, args.dependencies)
     # Reports of depinv before 1.0.0-preview.5 have no Usage column: the chart then shows references only.
     has_usage = "Usage" in dependency_columns

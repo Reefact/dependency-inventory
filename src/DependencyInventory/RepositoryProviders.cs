@@ -14,6 +14,9 @@ public interface IRepositoryProvider : IDisposable
     Task<IReadOnlyList<Repository>> GetRepositoriesAsync(CancellationToken ct);
     Task<IReadOnlyList<GitBranch>> GetBranchesAsync(string repositoryId, CancellationToken ct);
     Task<IReadOnlyList<GitFile>> GetTreeAsync(string repositoryId, string commitId, CancellationToken ct);
+
+    /// <summary>The committer date of a commit: the day it landed on its branch; none when the service omits it.</summary>
+    Task<DateTimeOffset?> GetCommitDateAsync(string repositoryId, string commitId, CancellationToken ct);
     Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct);
     string FileUrl(Repository repository, string commitId, string path);
 }
@@ -64,6 +67,9 @@ public sealed class AzureRepositoryProvider : IRepositoryProvider
     public Task<IReadOnlyList<GitFile>> GetTreeAsync(string repositoryId, string commitId, CancellationToken ct) =>
         _api.GetTreeAsync(repositoryId, commitId, ct);
 
+    public Task<DateTimeOffset?> GetCommitDateAsync(string repositoryId, string commitId, CancellationToken ct) =>
+        _api.GetCommitDateAsync(repositoryId, commitId, ct);
+
     public Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct) =>
         _api.GetFileAsync(repositoryId, commitId, path, ct);
 
@@ -102,6 +108,9 @@ public sealed class ContentReuseProvider(IRepositoryProvider inner) : IRepositor
             if (!file.IsFolder && file.ObjectId is { Length: > 0 } id) _ids[(commitId, file.Path)] = id;
         return tree;
     }
+
+    public Task<DateTimeOffset?> GetCommitDateAsync(string repositoryId, string commitId, CancellationToken ct) =>
+        inner.GetCommitDateAsync(repositoryId, commitId, ct);
 
     public async Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct)
     {
