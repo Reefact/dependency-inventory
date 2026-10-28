@@ -8,6 +8,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+## [1.0.0-preview.8] - 2026-10-28
+
 ### Added
 
 - **Every project gets a ProjectType: `Application`, `Library`, `Test`, `Sample` or `Unknown`**, decided from its
@@ -18,6 +20,9 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   8601 UTC), in `depinv packages` and `depinv frameworks`. It can help identify repositories whose latest commits are
   old; it is not the time the commit reached the branch. It costs one request per scanned commit; a date that cannot
   be read stays empty and `Details` says why.
+- **With `--transitive`, a reference whose own types the code does not use, but which brings a package the code
+  uses, is reported `UsedTransitively`** instead of `Unused`: removing it would break the build. Only the transitive
+  packages matching the filters count. `diagnostics.json` names the packages it brings.
 
 ### Changed
 
@@ -26,6 +31,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   `Directory.Build.props`, has none.
 - **`repositories.csv` gains the CommitDate column**, appended last, in both inventories; `report.json` and
   `diagnostics.json` gain the same field.
+- **The Usage column of `dependencies.csv` has a new value, `UsedTransitively`**, also in `report.json` and
+  `diagnostics.json`.
 
 ## [1.0.0-preview.7] - 2026-10-28
 
@@ -172,7 +179,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory --prerelease` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
-[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.7...HEAD
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.8...HEAD
+[1.0.0-preview.8]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.7...v1.0.0-preview.8
 [1.0.0-preview.7]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.6...v1.0.0-preview.7
 [1.0.0-preview.6]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.5...v1.0.0-preview.6
 [1.0.0-preview.5]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.4...v1.0.0-preview.5
