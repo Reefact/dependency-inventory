@@ -54,6 +54,20 @@ public sealed class CredentialStoreTests
     }
 
     [Fact]
+    public async Task TheFeedsOfAnotherOrganizationUseItsVaultEntry()
+    {
+        var store = new MemoryStore
+        {
+            [CredentialStores.KeyFor(SourceProvider.Azure, "https://dev.azure.com/Partner/Shared")] = Stored
+        };
+
+        var resolved = await CredentialResolver.ResolveKeyAsync(SourceProvider.Azure,
+            () => CredentialStores.AzureKey("partner"), false, null, store, () => null, CancellationToken.None);
+
+        Assert.Equal(Stored, resolved.Credentials);
+    }
+
+    [Fact]
     public async Task TheVaultComesBeforeThePrompt()
     {
         var store = new MemoryStore { [CredentialStores.KeyFor(SourceProvider.Azure, AzureUrl)] = Stored };

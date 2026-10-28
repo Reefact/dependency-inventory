@@ -33,22 +33,64 @@ public interface IPackageFeed : IDisposable
 /// </summary>
 public sealed record AzureFeed(string Organization, string? Project, string Name)
 {
+    private const string UrlFormat = "https://dev.azure.com/organization[/project]/_packaging/feed";
+
     private string Scope => Uri.EscapeDataString(Organization) +
         (Project is null ? "" : "/" + Uri.EscapeDataString(Project));
+
+    /// <summary>The name written in the reports: "feed" or "project/feed".</summary>
+    public string DisplayName => Project is null ? Name : $"{Project}/{Name}";
 
     public string IndexUrl => $"https://pkgs.dev.azure.com/{Scope}/_packaging/{Uri.EscapeDataString(Name)}/nuget/v3/index.json";
 
     public string PackagesApiUrl => $"https://feeds.dev.azure.com/{Scope}/_apis/packaging/Feeds/{Uri.EscapeDataString(Name)}/packages";
 
-    public static AzureFeed Parse(AzureOrigin origin, string? feed)
+    public string FeedApiUrl => $"https://feeds.dev.azure.com/{Scope}/_apis/packaging/Feeds/{Uri.EscapeDataString(Name)}";
+
+    /// <summary>
+    /// Parses --feed: a URL (https://dev.azure.com/organization[/project]/_packaging/feed, or the feed's
+    /// pkgs.dev.azure.com service index), otherwise a name of the organization of <paramref name="origin"/>:
+    /// "feed" or "project/feed". Without origin, only a URL is accepted.
+    /// </summary>
+    public static AzureFeed Parse(AzureOrigin? origin, string? feed)
     {
-        var parts = (feed ?? "").Trim().Split('/');
-        if (parts.Length is < 1 or > 2 || parts.Any(p => string.IsNullOrWhiteSpace(p) || p is "." or ".." || p.Contains('\\')))
-            throw new ArgumentException("--feed expects the feed name (organization feed) or project/feed (project feed).");
+        var value = (feed ?? "").Trim();
+        if (value.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return ParseUrl(value);
+        if (origin is null)
+            throw new ArgumentException(
+                $"--feed '{value}': give the feed URL ({UrlFormat}) when the code is not on Azure DevOps.");
+
+        var parts = value.Split('/');
+        if (parts.Length is < 1 or > 2 || parts.Any(InvalidSegment))
+            throw new ArgumentException(
+                $"--feed expects the feed name (organization feed), project/feed (project feed) or {UrlFormat}.");
         return parts.Length == 1
             ? new AzureFeed(origin.Organization, null, parts[0])
             : new AzureFeed(origin.Organization, parts[0], parts[1]);
     }
+
+    private static AzureFeed ParseUrl(string value)
+    {
+        var invalid = new ArgumentException($"Invalid feed URL '{value}': expected {UrlFormat}.");
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Port != 443 ||
+            !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
+            !(uri.Host.Equals("dev.azure.com", StringComparison.OrdinalIgnoreCase) ||
+                uri.Host.Equals("pkgs.dev.azure.com", StringComparison.OrdinalIgnoreCase)))
+            throw invalid;
+
+        var parts = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(Uri.UnescapeDataString).ToArray();
+        var packaging = Array.FindIndex(parts, p => p.Equals("_packaging", StringComparison.OrdinalIgnoreCase));
+        // Only the service index may follow the feed name: .../_packaging/feed/nuget/v3/index.json.
+        var rest = packaging < 0 ? [] : parts.Skip(packaging + 2).ToArray();
+        if (packaging is not (1 or 2) || parts.Length < packaging + 2 || parts.Any(InvalidSegment) ||
+            !(rest.Length == 0 || string.Join('/', rest).Equals("nuget/v3/index.json", StringComparison.OrdinalIgnoreCase)))
+            throw invalid;
+        return new AzureFeed(parts[0], packaging == 2 ? parts[1] : null, parts[packaging + 1]);
+    }
+
+    private static bool InvalidSegment(string part) =>
+        string.IsNullOrWhiteSpace(part) || part is "." or ".." || part.Contains('\\');
 }
 
 /// <summary>An Azure Artifacts feed, read through its NuGet v3 API and the Azure DevOps feed API. GET only.</summary>
@@ -63,6 +105,7 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     private readonly HttpClient _http;
     private readonly SemaphoreSlim _indexLock = new(1, 1);
     private string? _packageBaseAddress;
+    private Task<IReadOnlySet<string>>? _publicUpstreams;
 
     public string Origin => _feed.IndexUrl;
 
@@ -131,6 +174,11 @@ public sealed class AzureArtifactsFeed : IPackageFeed
             !found.TryGetProperty("versions", out var versions))
             return [];
 
+        // The feed definition is only read when a version comes from an upstream source.
+        var upstreams = versions.EnumerateArray().Select(UpstreamSource).ToArray();
+        var publicUpstreams = upstreams.Any(u => u is not null)
+            ? await PublicUpstreamsAsync(ct)
+            : new HashSet<string>();
         return versions.EnumerateArray()
             .Select(v => new PackagePublication(
                 v.TryGetProperty("normalizedVersion", out var normalized) ? normalized.GetString() ?? "" : "",
@@ -142,9 +190,39 @@ public sealed class AzureArtifactsFeed : IPackageFeed
                     ? views.EnumerateArray()
                         .Select(view => view.TryGetProperty("name", out var name) ? name.GetString() : null)
                         .Where(name => !string.IsNullOrEmpty(name)).Select(name => name!).ToArray()
-                    : []))
+                    : [],
+                UpstreamSource(v) is { } upstream && publicUpstreams.Contains(upstream)))
             .Where(p => p.Version.Length > 0)
             .ToArray();
+    }
+
+    /// <summary>
+    /// The upstream source a version was saved from; null for a version published to the feed. Only public upstream
+    /// sources (nuget.org...) make it a public package: another Azure Artifacts feed holds internal ones.
+    /// </summary>
+    private static string? UpstreamSource(JsonElement version) =>
+        version.TryGetProperty("directUpstreamSourceId", out var upstream) &&
+        upstream.ValueKind == JsonValueKind.String &&
+        Guid.TryParse(upstream.GetString(), out var id) && id != Guid.Empty
+            ? id.ToString("D") : null;
+
+    /// <summary>The ids of the feed's public upstream sources, read once from the feed definition.</summary>
+    private Task<IReadOnlySet<string>> PublicUpstreamsAsync(CancellationToken ct) =>
+        _publicUpstreams ??= ReadPublicUpstreamsAsync(ct);
+
+    private async Task<IReadOnlySet<string>> ReadPublicUpstreamsAsync(CancellationToken ct)
+    {
+        using var document = await ReadJsonAsync($"{_feed.FeedApiUrl}?api-version=7.1", ct);
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (document is null || !document.RootElement.TryGetProperty("upstreamSources", out var sources) ||
+            sources.ValueKind != JsonValueKind.Array)
+            return ids;
+        foreach (var source in sources.EnumerateArray())
+            if (source.TryGetProperty("upstreamSourceType", out var type) &&
+                string.Equals(type.GetString(), "public", StringComparison.OrdinalIgnoreCase) &&
+                source.TryGetProperty("id", out var id) && Guid.TryParse(id.GetString(), out var guid))
+                ids.Add(guid.ToString("D"));
+        return ids;
     }
 
     public async Task<IReadOnlyList<string>?> GetVersionsAsync(string id, CancellationToken ct)
@@ -165,24 +243,7 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     {
         using var response = await SendAsync(
             $"{await PackageBaseAsync(ct)}{Lower(id)}/{Normalized(version)}/{Lower(id)}.{Normalized(version)}.nupkg", ct);
-        if (response is null) return null;
-
-        // A package can be large and several are read at once: it goes to a temporary file, deleted when the
-        // stream is closed, rather than to memory. The ZIP reader needs a seekable stream.
-        var file = new FileStream(Path.Combine(Path.GetTempPath(), $"depinv-{Guid.NewGuid():N}.nupkg"),
-            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920,
-            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
-        try
-        {
-            await response.Content.CopyToAsync(file, ct);
-            file.Position = 0;
-            return file;
-        }
-        catch
-        {
-            await file.DisposeAsync();
-            throw;
-        }
+        return response is null ? null : await PackageDownload.ToTemporaryFileAsync(response.Content, ct);
     }
 
     /// <summary>The package content base address, read once from the service index.</summary>
@@ -204,12 +265,9 @@ public sealed class AzureArtifactsFeed : IPackageFeed
         finally { _indexLock.Release(); }
     }
 
-    // The NuGet package content API expects lowercase ids and versions.
-    private static string Lower(string value) => Uri.EscapeDataString(value.ToLowerInvariant());
+    private static string Lower(string value) => PackageDownload.Lower(value);
 
-    // ...and normalized versions: 2.0 is 2.0.0, 1.0.0.0 is 1.0.0, build metadata is dropped.
-    private static string Normalized(string version) =>
-        Lower(NuGetVersion.TryParse(version, out var parsed) ? parsed.ToNormalizedString() : version);
+    private static string Normalized(string version) => PackageDownload.Normalized(version);
 
     private async Task<JsonDocument?> ReadJsonAsync(string url, CancellationToken ct)
     {
@@ -247,5 +305,102 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     {
         _http.Dispose();
         _indexLock.Dispose();
+    }
+}
+
+/// <summary>nuget.org, read anonymously through its package content API (flat container). GET only.</summary>
+public sealed class NuGetOrgFeed : IPackageFeed
+{
+    private const string PackageBase = "https://api.nuget.org/v3-flatcontainer/";
+    private readonly HttpClient _http;
+
+    public string Origin => "https://api.nuget.org/v3/index.json";
+
+    public NuGetOrgFeed(Action<RetryNotice>? onRetry = null) : this(RepositoryHttpClient.Create(onRetry)) { }
+
+    public NuGetOrgFeed(HttpClient http) => _http = http;
+
+    /// <summary>nuget.org cannot list its packages: they are only read by id.</summary>
+    public Task<IReadOnlyList<string>> GetPackageIdsAsync(CancellationToken ct) =>
+        throw new NotSupportedException("nuget.org cannot list its packages.");
+
+    public Task<IReadOnlyList<PackagePublication>> GetPublicationsAsync(string id, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<PackagePublication>>([]);
+
+    public async Task<IReadOnlyList<string>?> GetVersionsAsync(string id, CancellationToken ct)
+    {
+        using var response = await SendAsync($"{PackageBase}{PackageDownload.Lower(id)}/index.json", ct);
+        if (response is null) return null;
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        return document.RootElement.GetProperty("versions").EnumerateArray()
+            .Select(v => v.GetString() ?? "").Where(v => v.Length > 0).ToArray();
+    }
+
+    public async Task<string?> GetNuspecAsync(string id, string version, CancellationToken ct)
+    {
+        var (lower, normalized) = (PackageDownload.Lower(id), PackageDownload.Normalized(version));
+        using var response = await SendAsync($"{PackageBase}{lower}/{normalized}/{lower}.nuspec", ct);
+        return response is null ? null : await response.Content.ReadAsStringAsync(ct);
+    }
+
+    public async Task<Stream?> GetPackageAsync(string id, string version, CancellationToken ct)
+    {
+        var (lower, normalized) = (PackageDownload.Lower(id), PackageDownload.Normalized(version));
+        using var response = await SendAsync($"{PackageBase}{lower}/{normalized}/{lower}.{normalized}.nupkg", ct);
+        return response is null ? null : await PackageDownload.ToTemporaryFileAsync(response.Content, ct);
+    }
+
+    /// <summary>The response, or null on HTTP 404.</summary>
+    private async Task<HttpResponseMessage?> SendAsync(string url, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            response.Dispose();
+            return null;
+        }
+        if (!response.IsSuccessStatusCode)
+        {
+            var status = (int)response.StatusCode;
+            response.Dispose();
+            throw new HttpRequestException($"nuget.org returned HTTP {status}.");
+        }
+        return response;
+    }
+
+    public void Dispose() => _http.Dispose();
+}
+
+internal static class PackageDownload
+{
+    // The NuGet package content API expects lowercase ids and versions.
+    public static string Lower(string value) => Uri.EscapeDataString(value.ToLowerInvariant());
+
+    // ...and normalized versions: 2.0 is 2.0.0, 1.0.0.0 is 1.0.0, build metadata is dropped.
+    public static string Normalized(string version) =>
+        Lower(NuGetVersion.TryParse(version, out var parsed) ? parsed.ToNormalizedString() : version);
+
+    /// <summary>
+    /// A package can be large and several are read at once: it goes to a temporary file, deleted when the
+    /// stream is closed, rather than to memory. The ZIP reader needs a seekable stream.
+    /// </summary>
+    public static async Task<Stream> ToTemporaryFileAsync(HttpContent content, CancellationToken ct)
+    {
+        var file = new FileStream(Path.Combine(Path.GetTempPath(), $"depinv-{Guid.NewGuid():N}.nupkg"),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920,
+            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+        try
+        {
+            await content.CopyToAsync(file, ct);
+            file.Position = 0;
+            return file;
+        }
+        catch
+        {
+            await file.DisposeAsync();
+            throw;
+        }
     }
 }

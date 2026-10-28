@@ -30,12 +30,15 @@ public static class CredentialStores
     /// </summary>
     public static string KeyFor(SourceProvider provider, string url) => provider switch
     {
-        SourceProvider.Azure =>
-            $"dependency-inventory:azure:dev.azure.com/{AzureOrigin.Parse(url).Organization.ToLowerInvariant()}",
+        SourceProvider.Azure => AzureKey(AzureOrigin.Parse(url).Organization),
         SourceProvider.GitLab =>
             $"dependency-inventory:gitlab:{new Uri(GitLabOrigin.Parse(url).BaseUrl).Authority.ToLowerInvariant()}",
         _ => throw new ArgumentOutOfRangeException(nameof(provider))
     };
+
+    /// <summary>The entry of an Azure DevOps organization, the one its feeds are read with.</summary>
+    public static string AzureKey(string organization) =>
+        $"dependency-inventory:azure:dev.azure.com/{organization.ToLowerInvariant()}";
 }
 
 public enum CredentialSource { File, Store, Prompt }
@@ -52,7 +55,13 @@ public static class CredentialResolver
     /// A credentials file is requested on a system with a vault: files are only accepted where no vault is
     /// supported yet, until they are removed.
     /// </exception>
-    public static async Task<ResolvedCredentials> ResolveAsync(SourceProvider provider, string url,
+    public static Task<ResolvedCredentials> ResolveAsync(SourceProvider provider, string url,
+        bool useFile, string? filePath, ICredentialStore? store, Func<RepositoryCredentials?> prompt,
+        CancellationToken ct) =>
+        ResolveKeyAsync(provider, () => CredentialStores.KeyFor(provider, url), useFile, filePath, store, prompt, ct);
+
+    /// <summary>As <see cref="ResolveAsync"/>, for the vault entry <paramref name="key"/> gives.</summary>
+    public static async Task<ResolvedCredentials> ResolveKeyAsync(SourceProvider provider, Func<string> key,
         bool useFile, string? filePath, ICredentialStore? store, Func<RepositoryCredentials?> prompt,
         CancellationToken ct)
     {
@@ -66,7 +75,7 @@ public static class CredentialResolver
             return new(await CredentialsFile.ReadAsync(path, provider, ct), CredentialSource.File);
         }
 
-        if (store?.Read(CredentialStores.KeyFor(provider, url)) is { } stored)
+        if (store?.Read(key()) is { } stored)
             return new(stored, CredentialSource.Store);
 
         return new(prompt(), CredentialSource.Prompt);

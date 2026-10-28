@@ -38,7 +38,16 @@ public enum CoverageStatus { OK, Partial, Failed, NoBranch, Disabled, NoNuGetFil
 [JsonConverter(typeof(JsonStringEnumConverter<FrameworkSource>))]
 public enum FrameworkSource { Project, DirectoryBuildProps, Unresolved }
 
+[JsonConverter(typeof(JsonStringEnumConverter<PackageUsage>))]
+public enum PackageUsage { Used, Unused, BuildOnly, Undetermined }
+
+[JsonConverter(typeof(JsonStringEnumConverter<PackageSource>))]
+public enum PackageSource { Feed, NuGetOrg }
+
 public sealed record ParsedPackage(string Id, string? Version, PackageKind Kind, VersionSource VersionSource);
+
+/// <summary>A type of a package referenced by the code, and the number of source files referencing it.</summary>
+public sealed record UsedType(string Type, int Files);
 
 public sealed record PackageOccurrence(
     string Project,
@@ -51,7 +60,11 @@ public sealed record PackageOccurrence(
     PackageKind Kind,
     VersionSource VersionSource,
     IReadOnlyList<string> MatchedFilters,
-    string Url);
+    string Url,
+    PackageUsage? Usage = null,
+    PackageSource? Source = null,
+    string? Feed = null,
+    IReadOnlyList<UsedType>? UsedTypes = null);
 
 public sealed record RepositoryCoverage(
     string Project,
@@ -151,8 +164,12 @@ public sealed record PackageMetadata(
     string? RepositoryBranch,
     string? RepositoryCommit);
 
-/// <summary>How a version is published in the feed: its date, whether it is listed, and the views it is in.</summary>
-public sealed record PackagePublication(string Version, DateTimeOffset? Published, bool? Listed, IReadOnlyList<string> Views);
+/// <summary>
+/// How a version is published in the feed: its date, whether it is listed, the views it is in, and whether it was
+/// saved from a public upstream source such as nuget.org rather than published to the feed.
+/// </summary>
+public sealed record PackagePublication(string Version, DateTimeOffset? Published, bool? Listed,
+    IReadOnlyList<string> Views, bool FromPublicUpstream = false);
 
 /// <summary>
 /// Everything read about one package version; no version when the package itself is unknown. Details holds

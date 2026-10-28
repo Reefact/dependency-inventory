@@ -49,7 +49,14 @@ public abstract class RepositorySettings : OriginSettings
 public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> where TSettings : RepositorySettings
 {
     /// <summary>Validates the inventory's own options, before any prompt for credentials; false stops with 2.</summary>
-    protected virtual bool Prepare(TSettings settings) => true;
+    protected virtual bool Prepare(TSettings settings, string url) => true;
+
+    /// <summary>
+    /// Resolves the other credentials the inventory needs, once those of the origin are known; any other result
+    /// than 0 stops with that exit code.
+    /// </summary>
+    protected virtual Task<int> AuthenticateAsync(TSettings settings, string url, RepositoryCredentials credentials,
+        CancellationToken cancellationToken) => Task.FromResult(0);
 
     /// <summary>Scans the selected repositories, writes the reports and returns the exit code.</summary>
     protected abstract Task<int> InventoryAsync(IRepositoryProvider api, IReadOnlyList<Repository> repositories,
@@ -68,7 +75,7 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
             return 2;
         }
 
-        if (!Prepare(settings)) return 2;
+        if (!Prepare(settings, url)) return 2;
 
         ScanParallelism parallelism;
         try { parallelism = ScanParallelism.Create(settings.Parallelism, settings.ParallelismMode); }
@@ -80,6 +87,8 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
 
         var (credentials, exitCode) = await OriginCredentials.ResolveAsync(settings, url, cancellationToken);
         if (credentials is null) return exitCode;
+        exitCode = await AuthenticateAsync(settings, url, credentials, cancellationToken);
+        if (exitCode != 0) return exitCode;
 
         try
         {
@@ -118,19 +127,40 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
 internal static class OriginCredentials
 {
     /// <summary>The credentials, or none and the exit code to stop with: 2 invalid input, 130 interrupted.</summary>
-    public static async Task<(RepositoryCredentials? Credentials, int ExitCode)> ResolveAsync(
-        OriginSettings settings, string url, CancellationToken cancellationToken)
-    {
+    public static Task<(RepositoryCredentials? Credentials, int ExitCode)> ResolveAsync(
+        OriginSettings settings, string url, CancellationToken cancellationToken) =>
         // Secrets are never logged; Azure uses login and PAT, GitLab the PAT alone.
+        ResolveAsync(store => CredentialResolver.ResolveAsync(settings.Provider, url,
+            settings.CredentialsFile.IsSet, settings.CredentialsFile.Value,
+            store, () => CredentialPrompt.Ask(settings.Provider), cancellationToken), "Credentials are required.");
+
+    /// <summary>
+    /// The credentials of another Azure DevOps organization than the origin's, for its feeds: the Azure credentials
+    /// file when --credentials-file is given (the default one when the origin is GitLab), then the vault entry of the
+    /// organization, then the prompt.
+    /// </summary>
+    public static Task<(RepositoryCredentials? Credentials, int ExitCode)> ResolveOrganizationAsync(
+        OriginSettings settings, string organization, CancellationToken cancellationToken) =>
+        ResolveAsync(store => CredentialResolver.ResolveKeyAsync(SourceProvider.Azure,
+                () => CredentialStores.AzureKey(organization), settings.CredentialsFile.IsSet,
+                settings.Provider == SourceProvider.Azure ? settings.CredentialsFile.Value : null, store,
+                () =>
+                {
+                    ScanConsole.OrganizationCredentials(organization);
+                    return CredentialPrompt.Ask(SourceProvider.Azure);
+                }, cancellationToken),
+            $"Credentials are required for the Azure DevOps organization {organization}.");
+
+    private static async Task<(RepositoryCredentials? Credentials, int ExitCode)> ResolveAsync(
+        Func<ICredentialStore?, Task<ResolvedCredentials>> resolve, string missing)
+    {
         var store = CredentialStores.ForCurrentPlatform();
         try
         {
-            var resolved = await CredentialResolver.ResolveAsync(settings.Provider, url,
-                settings.CredentialsFile.IsSet, settings.CredentialsFile.Value,
-                store, () => CredentialPrompt.Ask(settings.Provider), cancellationToken);
+            var resolved = await resolve(store);
             if (resolved.Credentials is null)
             {
-                ScanConsole.Error("Credentials are required.");
+                ScanConsole.Error(missing);
                 return (null, 2);
             }
             if (resolved.Source == CredentialSource.Store)

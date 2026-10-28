@@ -151,6 +151,46 @@ public sealed class FeedTests
             AzureFeed.Parse(AzureOrigin.Parse("https://dev.azure.com/acme/project"), name));
     }
 
+    [Theory]
+    [InlineData("https://dev.azure.com/Partner/_packaging/libs", "Partner", null, "libs")]
+    [InlineData("https://dev.azure.com/Partner/Shared/_packaging/libs/", "Partner", "Shared", "libs")]
+    [InlineData("https://pkgs.dev.azure.com/Partner/Shared/_packaging/libs/nuget/v3/index.json", "Partner", "Shared", "libs")]
+    [InlineData("https://dev.azure.com/Partner/My%20Project/_packaging/my%20feed", "Partner", "My Project", "my feed")]
+    public void FeedUrlNamesItsOwnOrganization(string url, string organization, string? project, string name)
+    {
+        // The origin is ignored: a URL may name a feed of any organization, and is accepted without origin.
+        Assert.Equal(new AzureFeed(organization, project, name),
+            AzureFeed.Parse(AzureOrigin.Parse("https://dev.azure.com/acme/project"), url));
+        Assert.Equal(new AzureFeed(organization, project, name), AzureFeed.Parse(null, url));
+    }
+
+    [Theory]
+    [InlineData("https://example.com/Partner/_packaging/libs")]
+    [InlineData("https://dev.azure.com/Partner/libs")]
+    [InlineData("https://dev.azure.com/Partner/_packaging")]
+    [InlineData("https://dev.azure.com/a/b/c/_packaging/libs")]
+    [InlineData("https://dev.azure.com/Partner/_packaging/libs/other")]
+    [InlineData("https://dev.azure.com/Partner/_packaging/libs?view=Release")]
+    public void FeedUrlMustNameAnAzureArtifactsFeed(string url)
+    {
+        Assert.Throws<ArgumentException>(() => AzureFeed.Parse(null, url));
+    }
+
+    [Fact]
+    public void FeedNameNeedsAnAzureDevOpsOrigin()
+    {
+        var error = Assert.Throws<ArgumentException>(() => AzureFeed.Parse(null, "libs"));
+        Assert.Contains("_packaging", error.Message);
+    }
+
+    [Theory]
+    [InlineData("libs", "libs")]
+    [InlineData("Shared/libs", "Shared/libs")]
+    public void FeedDisplayNameIsTheNameGivenToAzurePipelines(string name, string expected)
+    {
+        Assert.Equal(expected, AzureFeed.Parse(AzureOrigin.Parse("https://dev.azure.com/acme/project"), name).DisplayName);
+    }
+
     // --- --versions-from
 
     [Fact]

@@ -12,6 +12,9 @@ public sealed class RepositoryDiagnostic
     public string? Commit { get; set; }
     public List<string> AvailableBranches { get; } = [];
     public List<FileDiagnostic> Files { get; } = [];
+
+    /// <summary>How the usage of every reference was decided: where its package was read, why it is undetermined.</summary>
+    public List<UsageDiagnostic> Usages { get; } = [];
 }
 
 public sealed record FileDiagnostic(

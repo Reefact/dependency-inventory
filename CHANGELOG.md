@@ -8,6 +8,19 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+### Added
+
+- **`depinv packages` tells whether the code uses each referenced package.** The new Usage column of
+  `dependencies.csv` says `Used`, `Unused`, `BuildOnly` (analyzers, build or tool assets, development dependencies) or
+  `Undetermined`, from the public types of the package's assemblies and the syntax of the project's C# files, without
+  compiling. The packages are read from the Azure Artifacts feeds given by the new repeatable `--feed` option, then from
+  nuget.org unless `--no-nuget-org`. The new Source and Feed columns give the real origin of each package: a feed, or
+  nuget.org even when read from a feed's upstream cache. `--used-types` also writes `used-types.csv`, the types of each
+  package referenced by the code. Package contents are cached locally for the next runs, and the NuGet global packages
+  folder is read before any download. `diagnostics.json` gives the reason of every undetermined usage.
+- **`--feed` accepts a feed URL**, `https://dev.azure.com/organization[/project]/_packaging/feed`, in `depinv feed` and
+  `depinv packages`. A feed of another organization is read with that organization's credentials.
+
 ## [1.0.0-preview.4] - 2026-10-27
 
 ### Changed

@@ -208,6 +208,48 @@ public sealed class ScanTests
     }
 
     [Fact]
+    public async Task UsageColumnsAreAppendedToDependenciesOnlyAndUsedTypesAreWrittenOnRequest()
+    {
+        PackageOccurrence Occurrence(PackageKind kind, string file) =>
+            new("project", "api", "main", "abc", file, "Stime.Web", "2.0.0", kind, VersionSource.Explicit,
+                ["Glob:Stime.*"], "https://example/web",
+                kind == PackageKind.Reference ? PackageUsage.Used : null,
+                kind == PackageKind.Reference ? PackageSource.Feed : null,
+                kind == PackageKind.Reference ? "Shared/libs" : null,
+                kind == PackageKind.Reference ? [new UsedType("Stime.Web.Host", 3)] : null);
+        var report = new ScanReport(DateTimeOffset.UnixEpoch, "https://dev.azure.com/acme/project", [],
+            [Occurrence(PackageKind.Reference, "/src/Api.csproj"),
+                Occurrence(PackageKind.CentralVersion, "/Directory.Packages.props")], []);
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            await ReportWriter.SaveAsync(report, directory, false, CancellationToken.None);
+            Assert.False(File.Exists(Path.Combine(directory, "used-types.csv")));
+            await ReportWriter.SaveAsync(report, directory, true, CancellationToken.None);
+
+            Assert.Equal(
+            [
+                "Project;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url;Usage;Source;Feed",
+                "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Reference;Explicit;Glob:Stime.*;https://example/web;Used;Feed;Shared/libs"
+            ], await File.ReadAllLinesAsync(Path.Combine(directory, "dependencies.csv")));
+            Assert.Equal("Project;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url",
+                (await File.ReadAllLinesAsync(Path.Combine(directory, "central-versions.csv")))[0]);
+            Assert.Equal(
+            [
+                "Project;Repository;File;Package;Version;Source;Type;Files",
+                "project;api;/src/Api.csproj;Stime.Web;2.0.0;Feed;Stime.Web.Host;3"
+            ], await File.ReadAllLinesAsync(Path.Combine(directory, "used-types.csv")));
+            var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
+            Assert.Contains("\"Usage\": \"Used\"", json);
+            Assert.Contains("\"Source\": \"Feed\"", json);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ParsedPackageSerializesEnumNamesAsText()
     {
         var json = System.Text.Json.JsonSerializer.Serialize(
