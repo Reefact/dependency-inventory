@@ -189,7 +189,8 @@ public sealed class ScanTests
                 kind == PackageKind.Reference ? PackageUsage.Used : null,
                 kind == PackageKind.Reference ? PackageSource.Feed : null,
                 kind == PackageKind.Reference ? "Shared/libs" : null,
-                kind == PackageKind.Reference ? [new UsedType("Stime.Web.Host", 3)] : null);
+                kind == PackageKind.Reference ? [new UsedType("Stime.Web.Host", 3)] : null,
+                kind == PackageKind.Reference ? ProjectType.Application : null);
         var report = new ScanReport(DateTimeOffset.UnixEpoch, "https://dev.azure.com/acme/project", [],
             [Occurrence(PackageKind.Reference, "/src/Api.csproj"),
                 Occurrence(PackageKind.CentralVersion, "/Directory.Packages.props")], []);
@@ -202,8 +203,8 @@ public sealed class ScanTests
 
             Assert.Equal(
             [
-                "Project;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url;Usage;Source;Feed",
-                "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Reference;Explicit;Glob:Stime.*;https://example/web;Used;Feed;Shared/libs"
+                "Project;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url;Usage;Source;Feed;ProjectType",
+                "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Reference;Explicit;Glob:Stime.*;https://example/web;Used;Feed;Shared/libs;Application"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "dependencies.csv")));
             Assert.Equal("Project;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url",
                 (await File.ReadAllLinesAsync(Path.Combine(directory, "central-versions.csv")))[0]);

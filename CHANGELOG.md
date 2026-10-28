@@ -8,6 +8,19 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+### Added
+
+- **Every project gets a ProjectType: `Application`, `Library`, `Test`, `Sample` or `Unknown`**, decided from its
+  project file and the nearest `Directory.Build.props` (OutputType, SDK, IsTestProject, AzureFunctionsVersion, test
+  framework references, legacy ProjectTypeGuids, sample folders). It tells applications apart from libraries, tests
+  and samples in the inventory. With `--diagnostics`, `diagnostics.json` gives the rule that classified each project.
+
+### Changed
+
+- **`dependencies.csv`, `transitive-dependencies.csv` and `frameworks.csv` gain a ProjectType column**, appended
+  last; `report.json` gains the same field. A reference declared in a file shared by several projects, such as
+  `Directory.Build.props`, has none.
+
 ## [1.0.0-preview.7] - 2026-10-28
 
 ### Added

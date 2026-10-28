@@ -26,9 +26,10 @@ public static class ReportWriter
             "Version", "Kind", "VersionSource", "MatchedFilters", "Url"
         };
         var references = report.Occurrences.Where(x => x.Kind == PackageKind.Reference).ToArray();
-        await WriteCsvAsync(Path.Combine(absolute, "dependencies.csv"), [.. columns, "Usage", "Source", "Feed"],
+        await WriteCsvAsync(Path.Combine(absolute, "dependencies.csv"),
+            [.. columns, "Usage", "Source", "Feed", "ProjectType"],
             references.Select(x => (string[])[.. ToColumns(x), x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "",
-                x.Feed ?? ""]), ct);
+                x.Feed ?? "", x.ProjectType?.ToString() ?? ""]), ct);
         await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"), columns,
             report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(ToColumns), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
@@ -51,10 +52,11 @@ public static class ReportWriter
         else
             await WriteCsvAsync(transitiveFile,
                 ["Project", "Repository", "Branch", "Commit", "File", "Framework", "Package", "Version", "Via",
-                    "Resolution", "MatchedFilters", "Usage", "Source", "Feed"],
+                    "Resolution", "MatchedFilters", "Usage", "Source", "Feed", "ProjectType"],
                 transitive.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.File, x.Framework ?? "",
                     x.Package, x.Version, x.Via, x.Resolution.ToString(), string.Join(" | ", x.MatchedFilters),
-                    x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "", x.Feed ?? "" }), ct);
+                    x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "", x.Feed ?? "",
+                    x.ProjectType?.ToString() ?? "" }), ct);
         return absolute;
     }
 
@@ -68,9 +70,10 @@ public static class ReportWriter
             json, new UTF8Encoding(false), ct);
 
         await WriteCsvAsync(Path.Combine(absolute, "frameworks.csv"),
-            ["Project", "Repository", "Branch", "Commit", "ProjectFile", "Framework", "FrameworkSource", "Url"],
+            ["Project", "Repository", "Branch", "Commit", "ProjectFile", "Framework", "FrameworkSource", "Url",
+                "ProjectType"],
             report.Frameworks.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.ProjectFile,
-                x.Framework ?? "", x.FrameworkSource.ToString(), x.Url }), ct);
+                x.Framework ?? "", x.FrameworkSource.ToString(), x.Url, x.ProjectType?.ToString() ?? "" }), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
             ["Project", "Repository", "Branch", "Status", "FilesExamined", "Projects", "Details"],
             report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),

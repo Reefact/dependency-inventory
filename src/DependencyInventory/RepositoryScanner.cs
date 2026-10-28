@@ -374,6 +374,7 @@ public static class RepositoryScanner
             if (usage is not null)
                 (hits, transitiveDependencies) = await AnalyzeUsageAsync(usage, api, repo, branch, read.Tree,
                     msbuildFiles, found, transitiveDependencies, diagnostic, fileParallelism, ct);
+            (hits, transitiveDependencies) = Classify(read, hits, transitiveDependencies, diagnostic);
             var status = failures.Count > 0 ? CoverageStatus.Partial
                 : read.Files.Count == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
             return new(new(repo.Project, repo.Name, branchName, status,
@@ -386,6 +387,29 @@ public static class RepositoryScanner
             return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits,
                 transitiveDependencies);
         }
+    }
+
+    /// <summary>
+    /// Gives every reference and transitive dependency the kind of its project; a reference declared in a shared
+    /// file, such as Directory.Build.props, has none. Every project file is listed in the diagnostic.
+    /// </summary>
+    private static (IReadOnlyList<PackageOccurrence>, IReadOnlyList<TransitiveDependency>) Classify(
+        RepositoryRead<MsBuildFile> read, IReadOnlyList<PackageOccurrence> hits,
+        IReadOnlyList<TransitiveDependency> transitive, RepositoryDiagnostic? diagnostic)
+    {
+        var traits = read.Files.ToDictionary(f => f.Path, f => f.Error is null ? f.Parsed?.Traits : null,
+            StringComparer.Ordinal);
+        var paths = read.Files.Select(f => f.Path).ToArray();
+        var classified = new Dictionary<string, ProjectClassification>(StringComparer.Ordinal);
+        ProjectType? TypeOf(string file) => ProjectClassifier.ProjectOf(file, paths) is { } project
+            ? (classified.TryGetValue(project, out var known) ? known
+                : classified[project] = ProjectClassifier.Classify(project, traits)).Type
+            : null;
+
+        foreach (var project in paths.Where(NuGetDependencyParser.IsProjectFile)) TypeOf(project);
+        diagnostic?.Projects.AddRange(classified.Values.OrderBy(c => c.Path, StringComparer.Ordinal));
+        return (hits.Select(h => h with { ProjectType = TypeOf(h.File) }).ToArray(),
+            transitive.Select(t => t with { ProjectType = TypeOf(t.File) }).ToArray());
     }
 
     /// <summary>

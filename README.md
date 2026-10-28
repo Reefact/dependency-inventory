@@ -132,8 +132,9 @@ Each dependency appears once per declaration, even when it matches several filte
 
 The dependency-report folder (configurable with --output) contains:
 
-- dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters, and the
-  usage of the package: Usage, Source and Feed (see [Package usage](#-package-usage));
+- dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters, the
+  usage of the package: Usage, Source and Feed (see [Package usage](#-package-usage)), and the ProjectType of the
+  project that declares it (see [Project types](#project-types));
 - central-versions.csv: central version declarations matching the filters;
 - repositories.csv: coverage of every repository found and its scan status;
 - used-types.csv: with --used-types only, the types of each package referenced by the code;
@@ -225,7 +226,7 @@ depinv packages --provider azure --url "https://dev.azure.com/Organization/Proje
 
 Every declared reference takes part in the graph, whether it matches the filters or not; only the transitive packages
 matching them are written to transitive-dependencies.csv: Project, Repository, Branch, Commit, File (the project file),
-Framework, Package, Version, Via, Resolution, MatchedFilters, Usage, Source and Feed. dependencies.csv keeps the
+Framework, Package, Version, Via, Resolution, MatchedFilters, Usage, Source, Feed and ProjectType. dependencies.csv keeps the
 declared references only.
 
 - Via is the path from the declared reference to the package, such as A > B > Y.
@@ -264,7 +265,8 @@ depinv frameworks --provider azure --url "https://dev.azure.com/Organization/Pro
 It takes the same options as `depinv packages` except the filters (`--pattern`, `--regex`, `--case-sensitive`).
 The framework-report folder (configurable with --output) contains:
 
-- frameworks.csv: one line per project file and target framework: ProjectFile, Framework, FrameworkSource, branch, commit;
+- frameworks.csv: one line per project file and target framework: ProjectFile, Framework, FrameworkSource, branch, commit,
+  and its ProjectType (see [Project types](#project-types));
 - repositories.csv: coverage of every repository found and its scan status, with the number of projects found;
 - report.json: full JSON report.
 
@@ -378,6 +380,20 @@ Each branch gets its own lines, with no deduplication: a reference declared on r
 The work is shared between branches, the reports are not: branches on the same commit are scanned once, and a file whose content was already read on another branch of the repository is not downloaded again.
 
 Both providers read files from each repository's selected commit without cloning it.
+
+### Project types
+
+Every project file gets a ProjectType, written in dependencies.csv, transitive-dependencies.csv and frameworks.csv, so that applications can be told from libraries, tests and samples. The first rule that applies decides:
+
+| ProjectType | Rule |
+|---|---|
+| Test | IsTestProject is true, the project references Microsoft.NET.Test.Sdk, xunit, xunit.core, NUnit, nunit.framework, MSTest.TestFramework or Microsoft.VisualStudio.QualityTools.UnitTestFramework, or its legacy ProjectTypeGuids is a test project's |
+| Sample | a folder of its path is samples, sample, examples, example or demo |
+| Application | OutputType is Exe or WinExe, the SDK is Microsoft.NET.Sdk.Web, Microsoft.NET.Sdk.Worker or Microsoft.NET.Sdk.BlazorWebAssembly, AzureFunctionsVersion is set, or its legacy ProjectTypeGuids is a web application's |
+| Library | any other readable project |
+| Unknown | the project file could not be read |
+
+OutputType, IsTestProject, AzureFunctionsVersion and the test framework references come from the project file, then from the nearest Directory.Build.props, the one MSBuild imports; a property of the project wins. A packages.config takes the type of the project file next to it. A reference declared in a file shared by several projects, such as Directory.Build.props, has no ProjectType. These rules are heuristics: with --diagnostics, diagnostics.json gives under Projects the rule that classified every project file.
 
 ### NuGet extraction
 

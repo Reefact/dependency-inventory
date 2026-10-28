@@ -47,6 +47,9 @@ public enum PackageUsage { Used, Unused, BuildOnly, Undetermined }
 [JsonConverter(typeof(JsonStringEnumConverter<PackageSource>))]
 public enum PackageSource { Feed, NuGetOrg }
 
+[JsonConverter(typeof(JsonStringEnumConverter<ProjectType>))]
+public enum ProjectType { Application, Library, Test, Sample, Unknown }
+
 public sealed record ParsedPackage(string Id, string? Version, PackageKind Kind, VersionSource VersionSource);
 
 /// <summary>A type of a package referenced by the code, and the number of source files referencing it.</summary>
@@ -67,7 +70,8 @@ public sealed record PackageOccurrence(
     PackageUsage? Usage = null,
     PackageSource? Source = null,
     string? Feed = null,
-    IReadOnlyList<UsedType>? UsedTypes = null);
+    IReadOnlyList<UsedType>? UsedTypes = null,
+    ProjectType? ProjectType = null);
 
 public sealed record RepositoryCoverage(
     string Project,
@@ -100,7 +104,8 @@ public sealed record TransitiveDependency(
     PackageUsage? Usage = null,
     PackageSource? Source = null,
     string? Feed = null,
-    IReadOnlyList<UsedType>? UsedTypes = null);
+    IReadOnlyList<UsedType>? UsedTypes = null,
+    ProjectType? ProjectType = null);
 
 public sealed record ScanReport(
     DateTimeOffset ScannedAt,
@@ -120,7 +125,8 @@ public sealed record FrameworkOccurrence(
     string ProjectFile,
     string? Framework,
     FrameworkSource FrameworkSource,
-    string Url);
+    string Url,
+    ProjectType? ProjectType = null);
 
 /// <summary>Coverage of one repository by the frameworks inventory.</summary>
 public sealed record ProjectCoverage(

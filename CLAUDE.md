@@ -26,6 +26,7 @@
   - `BranchSelector.cs`: the one branch scanned per repository.
   - `NuGetDependencyParser.cs`: NuGet references extracted from project files.
   - `FrameworkParser.cs`: target frameworks declared by project files and Directory.Build.props.
+  - `ProjectClassifier.cs`: the kind of every project (application, library, test, sample), from its project file.
   - `DependencyMatcher.cs`: `--pattern` / `--regex` filters.
   - `ReportWriter.cs`, `Models.cs`: reports and their data.
 - `tests/DependencyInventory.Tests/`: unit tests; `FakeRepositoryProvider` serves repositories from memory.
@@ -39,7 +40,7 @@
 ## Rules
 
 - **Commits** follow Conventional Commits 1.0.0 and are written in English. `tools/commit-lint/lint-commit-message.sh` checks them, in CI on every pull request and locally once the hook is enabled with `git config core.hooksPath .githooks`.
-- **Reports are a contract.** `dependencies.csv`, `central-versions.csv`, `used-types.csv`, `transitive-dependencies.csv`, `frameworks.csv`, `repositories.csv`, `package-frameworks.csv`, `package-dependencies.csv`, `packages.csv`, `report.json` and `diagnostics.json` must not change unless the change is intended. Enum names (`PackageKind`, `VersionSource`, `CoverageStatus`, `FrameworkSource`, `DependencyKind`, `PackageStatus`, `FrameworksFrom`, `PackageUsage`, `PackageSource`, `DependencyResolution`) are written as-is in them: renaming a member changes the output.
+- **Reports are a contract.** `dependencies.csv`, `central-versions.csv`, `used-types.csv`, `transitive-dependencies.csv`, `frameworks.csv`, `repositories.csv`, `package-frameworks.csv`, `package-dependencies.csv`, `packages.csv`, `report.json` and `diagnostics.json` must not change unless the change is intended. Enum names (`PackageKind`, `VersionSource`, `CoverageStatus`, `FrameworkSource`, `DependencyKind`, `PackageStatus`, `FrameworksFrom`, `PackageUsage`, `PackageSource`, `DependencyResolution`, `ProjectType`) are written as-is in them: renaming a member changes the output.
 - **Read-only.** The tool never writes to Azure DevOps, Azure Artifacts, GitLab or nuget.org: GET requests only. Its only writes are the reports and the local cache of package contents.
 - **Secrets** (PAT, login) are never logged nor serialized.
 - **Tests and warnings.** Every behavior change comes with a test. The build treats warnings as errors.
