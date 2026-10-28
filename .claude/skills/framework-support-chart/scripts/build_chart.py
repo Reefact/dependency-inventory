@@ -142,8 +142,14 @@ def format_date(value: dt.date, lang: str) -> str:
 
 def read_csv(path: Path) -> list[dict]:
     """depinv CSV: semicolon-separated, UTF-8 with BOM, quoted values may hold ';' and line breaks."""
-    text = path.read_text(encoding="utf-8-sig")
-    return list(csv.DictReader(io.StringIO(text), delimiter=";"))
+    return read_csv_with_columns(path)[1]
+
+
+def read_csv_with_columns(path: Path) -> tuple[list[str], list[dict]]:
+    """The header and the rows of a depinv CSV; the header is known even without any row."""
+    reader = csv.DictReader(io.StringIO(path.read_text(encoding="utf-8-sig")), delimiter=";")
+    rows = list(reader)
+    return list(reader.fieldnames or []), rows
 
 
 def version_key(version: str):
@@ -260,12 +266,12 @@ def select_branches(rows: list[dict], branches: list[str], source: Path) -> list
     return rows
 
 
-def select_project_types(rows: list[dict], types: list[str], source: Path) -> list[dict]:
+def select_project_types(rows: list[dict], columns: list[str], types: list[str], source: Path) -> list[dict]:
     """The rows of projects of one of the types; all rows without any. A reference declared in a shared file has no
-    type and is left out by the filter."""
+    type and is left out by the filter. A report without the ProjectType column is refused, rows or not."""
     if not types:
         return rows
-    if rows and "ProjectType" not in rows[0]:
+    if "ProjectType" not in columns:
         sys.exit(f"{source} has no ProjectType column: --project-type needs a report of depinv 1.0.0-preview.8 "
                  "or later.")
     wanted = {t.lower() for t in types}
@@ -308,11 +314,11 @@ def main() -> None:
     usage: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {"used": 0, "unused": 0, "undetermined": 0})
     names: dict[str, str] = {}
     unresolved = 0
-    dependency_rows = read_csv(args.dependencies)
+    dependency_columns, dependency_rows = read_csv_with_columns(args.dependencies)
+    dependency_rows = select_project_types(dependency_rows, dependency_columns, args.project_type, args.dependencies)
     dependency_rows = select_branches(dependency_rows, args.branch, args.dependencies)
-    dependency_rows = select_project_types(dependency_rows, args.project_type, args.dependencies)
     # Reports of depinv before 1.0.0-preview.5 have no Usage column: the chart then shows references only.
-    has_usage = bool(dependency_rows) and "Usage" in dependency_rows[0]
+    has_usage = "Usage" in dependency_columns
     for row in dependency_rows:
         if row.get("Kind", "Reference") != "Reference" or not included(row["Package"]):
             continue

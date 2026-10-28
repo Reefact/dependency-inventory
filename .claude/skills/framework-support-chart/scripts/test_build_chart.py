@@ -204,13 +204,19 @@ class ProjectTypeTests(unittest.TestCase):
     ]
 
     def test_the_filter_keeps_the_projects_of_the_types(self):
-        rows = build_chart.select_project_types(self.ROWS, ["application"], Path("dependencies.csv"))
+        columns = ["Repository", "File", "ProjectType"]
+        rows = build_chart.select_project_types(self.ROWS, columns, ["application"], Path("dependencies.csv"))
         self.assertEqual([r["File"] for r in rows], ["/src/Api.csproj"])
-        self.assertEqual(build_chart.select_project_types(self.ROWS, [], Path("dependencies.csv")), self.ROWS)
+        self.assertEqual(build_chart.select_project_types(self.ROWS, columns, [], Path("dependencies.csv")), self.ROWS)
 
-    def test_a_report_without_project_types_cannot_be_filtered(self):
+    def test_a_report_without_project_types_cannot_be_filtered_even_without_rows(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "dependencies.csv"
+            report.write_text("Project;Repository;File;Package;Version;Kind\n", encoding="utf-8-sig")
+            columns, rows = build_chart.read_csv_with_columns(report)
+        self.assertEqual((columns[-1], rows), ("Kind", []))
         with self.assertRaises(SystemExit) as raised:
-            build_chart.select_project_types([{"Repository": "api"}], ["Application"], Path("dependencies.csv"))
+            build_chart.select_project_types(rows, columns, ["Application"], report)
         self.assertIn("has no ProjectType column", str(raised.exception))
 
 
