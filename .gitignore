@@ -12,3 +12,6 @@ dependency-report/
 *.credentials
 *.auth
 credentials.txt
+
+# Python bytecode of the skills scripts
+__pycache__/
