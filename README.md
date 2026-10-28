@@ -23,8 +23,9 @@ depinv packages --provider azure --url "https://dev.azure.com/Organization/Proje
 ~~~
 
 It reads the files of each repository's selected branch through the provider's API, without cloning anything,
-extracts the NuGet references, keeps the ones matching your filters and writes the reports. It is read-only:
-the tool only sends GET requests.
+extracts the NuGet references, keeps the ones matching your filters and writes the reports. For every reference, it
+also tells whether the code actually uses the package, without compiling anything (see
+[Package usage](#-package-usage)). It is read-only: the tool only sends GET requests.
 
 There is no implicit filter: one or more `--pattern` or `--regex` options are required. `depinv pkg` is a shorter
 alias of `depinv packages`.
@@ -67,7 +68,7 @@ depinv packages --provider azure --url "https://dev.azure.com/Organization/Proje
 ~~~
 
 The Azure DevOps login and PAT are needed (see Authentication); the PAT needs the Code (Read) scope, and the
-Packaging (Read) scope for `depinv feed`.
+Packaging (Read) scope for `depinv feed` and the `--feed` option of `depinv packages`.
 
 ### GitLab
 
@@ -131,12 +132,77 @@ Each dependency appears once per declaration, even when it matches several filte
 
 The dependency-report folder (configurable with --output) contains:
 
-- dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters;
+- dependencies.csv: filtered direct references, package, version, file, branch, commit, MatchedFilters, and the
+  usage of the package: Usage, Source and Feed (see [Package usage](#-package-usage));
 - central-versions.csv: central version declarations matching the filters;
 - repositories.csv: coverage of every repository found and its scan status;
-- report.json: full JSON report, including the applied filters.
+- used-types.csv: with --used-types only, the types of each package referenced by the code;
+- report.json: full JSON report, including the applied filters, the usage and the used types.
 
 CSV files are UTF-8 with BOM and semicolon-separated.
+
+## 🧩 Package usage
+
+For every reference, `depinv packages` tells whether the code of the project uses the package. It reads the package's
+assemblies to know its public types, then the C# files of the project to know the names they reference: no restore,
+no build, so it works on solutions that need manual steps to compile. The Usage column of dependencies.csv says:
+
+- Used: at least one type of the package is referenced by the C# code of the project;
+- Unused: the package exposes types and none is referenced;
+- BuildOnly: the package acts on the build without being referenced in code: analyzers, source generators, packages
+  with build, tool or content assets only, development dependencies, test adapters (xunit.runner.visualstudio,
+  Microsoft.NET.Test.Sdk...). It is never reported unused;
+- Undetermined: the usage could not be computed, e.g. the package was found in no source, the version is an MSBuild
+  property, the project is in VB or F#, or a source file could not be read. --diagnostics gives the reason.
+
+The packages are read from the Azure Artifacts feeds given by --feed, in the order given, then from nuget.org:
+
+~~~powershell
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --feed my-feed --used-types
+
+depinv packages --provider gitlab --url "https://gitlab.example.com/red/web" --pattern "Contoso.*" --feed "https://dev.azure.com/Contoso/_packaging/internal" --feed "https://dev.azure.com/Partner/Shared/_packaging/libs" --no-nuget-org
+~~~
+
+- --feed (repeatable): `my-feed` or `Project/my-feed` for a feed of the --url organization, as in `depinv feed`, or the
+  feed URL: https://dev.azure.com/organization[/project]/_packaging/feed, or its pkgs.dev.azure.com service index. The
+  URL form is required with --provider gitlab, and reads feeds of other organizations. A feed of the --url organization
+  is read with the same credentials; another organization's feeds with its own, resolved like the others (vault entry of
+  that organization, `depinv login --provider azure --url` with one of its projects, or the prompt; with
+  --credentials-file, the Azure credentials file). The PAT needs the Packaging (Read) scope.
+- nuget.org is read anonymously, unless --no-nuget-org is given; with --no-nuget-org, at least one --feed is required.
+  Without --feed, internal packages end up Undetermined.
+- --used-types also writes used-types.csv: one line per type referenced, with Project, Repository, File, Package,
+  Version and Source to join dependencies.csv, the full name of the Type, and Files, the number of C# files
+  referencing it (0 for a type only named by a Using item of the project file).
+
+The Source column gives the real origin of the package: Feed, with the feed in the Feed column, for a package
+published to a feed; NuGetOrg for a public package, even when read from a feed that saved it from nuget.org as an
+upstream source. A version is looked up among those a feed holds, never fetched through its upstream sources, so
+reading it does not save it to the feed.
+
+How the usage is decided:
+
+- The types of a package are the public types of its assemblies, read from ref/{framework} when present, otherwise
+  lib/{framework}, for every framework. Assemblies are read, never loaded.
+- The C# files of a project are those under its folder, except bin and obj, and except those of a project in a
+  subfolder. A file references a type of the package when it names it (Bus, [Subscribe] for SubscribeAttribute) in a
+  namespace it imports: using, global using, the enclosing namespace, the Using items of the project file and of the
+  nearest Directory.Build.props, and the implicit usings of its SDK (ImplicitUsings). A fully qualified name, a
+  using static, an alias, and an extension method called in a file importing its namespace count as well.
+- A reference declared in a Directory.Build.props, packages.config or another imported file applies to every project
+  under its folder.
+- A package without assemblies of its own, such as xunit, brings the types of its dependencies, for the target
+  frameworks of the project.
+- The version read is the one declared, or the minimum of a range.
+
+Accepted limits: there is no semantic model. A package used only through reflection, configuration (such as Serilog
+sinks declared in appsettings.json) or dependency injection by convention can be reported Unused, and a package used
+only through another package (the project calls Z, Z uses Y) is not used by the project. Only C# is analyzed.
+
+The content of each package version is cached in the local application data folder (depinv/package-content), as a
+published version never changes; the next runs do not download it again. The NuGet global packages folder
+(NUGET_PACKAGES, or ~/.nuget/packages) is read before any download. Reading every C# file takes more requests than the
+project files only: --parallelism applies to them as well.
 
 ## 🧱 Target frameworks
 
@@ -176,7 +242,8 @@ depinv feed --provider azure --url "https://dev.azure.com/Organization/Project" 
 
 `--provider`, `--url` and the credentials are those of the other commands; the PAT needs the Packaging (Read) scope.
 `--feed` names the feed as an Azure Pipelines task does: `my-feed` for an organization feed, `Project/my-feed` for a
-project feed. GitLab package registries are not supported yet.
+project feed, or gives its URL, https://dev.azure.com/organization[/project]/_packaging/feed; a feed of another
+organization is read with that organization's credentials. GitLab package registries are not supported yet.
 
 The versions to read come from one or more of these options, combined:
 
@@ -247,7 +314,7 @@ depinv packages --provider gitlab --url "https://gitlab.example.com/red/web" --p
 
 ### Transient errors
 
-A request to Azure DevOps or GitLab is retried, up to 5 attempts in total, when it fails transiently: HTTP 429 (too many requests), 502, 503 or 504 (service unavailable), network error, or response timeout. The wait follows the Retry-After header when present, otherwise an exponential backoff with a random part; each retry delay is capped at 60 seconds and announced in the console. Other errors (400, 401, 403, 404...) are not retried. When the attempts are exhausted, the error is reported as before in repositories.csv.
+A request to Azure DevOps, Azure Artifacts, GitLab or nuget.org is retried, up to 5 attempts in total, when it fails transiently: HTTP 429 (too many requests), 502, 503 or 504 (service unavailable), network error, or response timeout. The wait follows the Retry-After header when present, otherwise an exponential backoff with a random part; each retry delay is capped at 60 seconds and announced in the console. Other errors (400, 401, 403, 404...) are not retried. When the attempts are exhausted, the error is reported as before in repositories.csv.
 
 The 120 s timeout applies to each attempt, including the time needed to read the full response, but excluding delays between attempts. A timeout on a file makes the repository partial without stopping the scan; only Ctrl+C stops it.
 
@@ -257,7 +324,7 @@ The 120 s timeout applies to each attempt, including the time needed to read the
 depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --repository api-order-bo --diagnostics
 ~~~
 
-The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined. With `depinv frameworks`, it lists the frameworks declared by every file examined instead.
+The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and the files examined, and in Usages how the usage of every reference was decided: the projects and source files analyzed, where the package was read from (Cache, GlobalPackagesFolder or the source), and the reason of an Undetermined or BuildOnly usage. With `depinv frameworks`, it lists the frameworks declared by every file examined instead.
 
 ## 🤝 Contributing
 

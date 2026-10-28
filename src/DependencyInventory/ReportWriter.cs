@@ -5,7 +5,14 @@ namespace DependencyInventory;
 
 public static class ReportWriter
 {
-    public static async Task<string> SaveAsync(ScanReport report, string directory, CancellationToken ct)
+    public static Task<string> SaveAsync(ScanReport report, string directory, CancellationToken ct) =>
+        SaveAsync(report, directory, false, ct);
+
+    /// <summary>
+    /// Writes the package inventory: report.json, dependencies.csv, central-versions.csv, repositories.csv, and
+    /// used-types.csv with <paramref name="usedTypes"/>.
+    /// </summary>
+    public static async Task<string> SaveAsync(ScanReport report, string directory, bool usedTypes, CancellationToken ct)
     {
         var absolute = Path.GetFullPath(directory);
         Directory.CreateDirectory(absolute);
@@ -18,14 +25,21 @@ public static class ReportWriter
             "Project", "Repository", "Branch", "Commit", "File", "Package",
             "Version", "Kind", "VersionSource", "MatchedFilters", "Url"
         };
-        await WriteCsvAsync(Path.Combine(absolute, "dependencies.csv"), columns,
-            report.Occurrences.Where(x => x.Kind == PackageKind.Reference).Select(ToColumns), ct);
+        var references = report.Occurrences.Where(x => x.Kind == PackageKind.Reference).ToArray();
+        await WriteCsvAsync(Path.Combine(absolute, "dependencies.csv"), [.. columns, "Usage", "Source", "Feed"],
+            references.Select(x => (string[])[.. ToColumns(x), x.Usage?.ToString() ?? "", x.Source?.ToString() ?? "",
+                x.Feed ?? ""]), ct);
         await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"), columns,
             report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(ToColumns), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
             ["Project", "Repository", "Branch", "Status", "FilesExamined", "References", "Details"],
             report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
                 x.FilesExamined.ToString(), x.References.ToString(), x.Details ?? "" }), ct);
+        if (usedTypes)
+            await WriteCsvAsync(Path.Combine(absolute, "used-types.csv"),
+                ["Project", "Repository", "File", "Package", "Version", "Source", "Type", "Files"],
+                references.SelectMany(x => (x.UsedTypes ?? []).Select(t => new[] { x.Project, x.Repository, x.File, x.Package,
+                    x.Version ?? "", x.Source?.ToString() ?? "", t.Type, t.Files.ToString() })), ct);
         return absolute;
     }
 

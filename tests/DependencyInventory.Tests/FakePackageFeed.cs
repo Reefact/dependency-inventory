@@ -9,7 +9,12 @@ internal sealed class FakePackageFeed : IPackageFeed
     private readonly Dictionary<string, List<PackagePublication>> _publications = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _failingPublications = new(StringComparer.OrdinalIgnoreCase);
 
+    private int _packageReads;
+
     public string Origin => "https://pkgs.dev.azure.com/acme/_packaging/feed/nuget/v3/index.json";
+
+    /// <summary>Number of .nupkg files read.</summary>
+    public int PackageReads => Volatile.Read(ref _packageReads);
 
     public FakePackageFeed Add(string id, string version, string? nuspec, byte[]? package = null)
     {
@@ -23,6 +28,14 @@ internal sealed class FakePackageFeed : IPackageFeed
     {
         if (!_publications.TryGetValue(id, out var publications)) _publications[id] = publications = [];
         publications.Add(new PackagePublication(version.ToLowerInvariant(), published, listed, views));
+        return this;
+    }
+
+    /// <summary>A version the feed saved from a public upstream source such as nuget.org.</summary>
+    public FakePackageFeed Cache(string id, string version)
+    {
+        if (!_publications.TryGetValue(id, out var publications)) _publications[id] = publications = [];
+        publications.Add(new PackagePublication(version, null, true, [], FromPublicUpstream: true));
         return this;
     }
 
@@ -56,8 +69,11 @@ internal sealed class FakePackageFeed : IPackageFeed
             ? throw new HttpRequestException($"cannot read {id} {version}")
             : Task.FromResult(Find(id, version)?.Nuspec);
 
-    public Task<Stream?> GetPackageAsync(string id, string version, CancellationToken ct) =>
-        Task.FromResult<Stream?>(Find(id, version)?.Package is { } bytes ? new MemoryStream(bytes) : null);
+    public Task<Stream?> GetPackageAsync(string id, string version, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _packageReads);
+        return Task.FromResult<Stream?>(Find(id, version)?.Package is { } bytes ? new MemoryStream(bytes) : null);
+    }
 
     private (string? Nuspec, byte[]? Package)? Find(string id, string version) =>
         _packages.TryGetValue(id, out var versions) && versions.TryGetValue(version, out var files) ? files : null;

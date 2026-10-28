@@ -33,6 +33,12 @@ public static class ScanConsole
         AnsiConsole.MarkupLine($"Source: [blue]{Markup.Escape(origin)}[/] — " +
             $"{accessible} accessible repositories, {selected} to scan.");
 
+    public static void OrganizationCredentials(string organization) =>
+        AnsiConsole.MarkupLine($"Credentials for the feeds of the Azure DevOps organization [blue]{Markup.Escape(organization)}[/]:");
+
+    public static void PackageSources(IReadOnlyList<string> sources) =>
+        AnsiConsole.MarkupLine("Package sources (in order): " + Markup.Escape(string.Join(", ", sources)));
+
     public static void CredentialsFromStore(string store) =>
         AnsiConsole.MarkupLine($"Credentials: {Markup.Escape(store)}.");
 
@@ -87,6 +93,9 @@ public static class ScanConsole
             .AddRow("Distinct packages", references.Select(x => x.Package)
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count().ToString())
             .AddRow("Failed or partial repositories", result.IncompleteRepositories.ToString());
+        if (references.Any(x => x.Usage is not null))
+            foreach (var usage in Enum.GetValues<PackageUsage>())
+                summary.AddRow($"{usage} references", references.Count(x => x.Usage == usage).ToString());
         AnsiConsole.Write(summary);
         AnsiConsole.MarkupLine($"Reports: [green]{Markup.Escape(reportDirectory)}[/]");
         if (result.IncompleteRepositories > 0)

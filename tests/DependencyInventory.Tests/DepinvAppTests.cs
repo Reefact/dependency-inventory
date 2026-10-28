@@ -47,6 +47,26 @@ public sealed class DepinvAppTests
         Assert.Equal(2, await DepinvApp.Create().RunAsync(["feed", .. arguments]));
     }
 
+    // Invalid package sources stop the package scan with 2 before any credential or network access.
+    [Theory]
+    [InlineData("--provider", "azure", "--url", "https://dev.azure.com/acme/project", "--pattern", "A", "--no-nuget-org")]
+    [InlineData("--provider", "gitlab", "--url", "https://gitlab.example.com/group", "--pattern", "A", "--feed", "f")]
+    [InlineData("--provider", "azure", "--url", "https://dev.azure.com/acme/project", "--pattern", "A",
+        "--feed", "https://example.com/acme/_packaging/f")]
+    [InlineData("--provider", "azure", "--url", "https://dev.azure.com/acme/project", "--pattern", "A",
+        "--feed", "f", "--feed", "a/b/c")]
+    public async Task ThePackageScanRejectsInvalidPackageSources(params string[] arguments)
+    {
+        Assert.Equal(2, await DepinvApp.Create().RunAsync(["packages", .. arguments]));
+    }
+
+    [Fact]
+    public async Task TheFeedCommandRejectsAnInvalidFeedUrl()
+    {
+        Assert.Equal(2, await DepinvApp.Create().RunAsync(["feed", "--provider", "azure",
+            "--url", "https://dev.azure.com/acme/project", "--feed", "https://dev.azure.com/acme/libs", "--package", "A"]));
+    }
+
     [Fact]
     public async Task ThePackageScanIsNoLongerTheDefaultCommand()
     {

@@ -14,7 +14,8 @@
 - `src/DependencyInventory/`
   - `Program.cs`, `DepinvApp.cs`: commands (`packages`, `frameworks`, `feed`, `login`, `logout`).
   - `RepositoryCommand.cs`, `PackagesCommand.cs`, `FrameworksCommand.cs`: CLI options, prompts, validation and exit codes; the base class is shared by both repository inventories, `OriginCredentials` by every command.
-  - `FeedCommand.cs`, `FeedScanner.cs`, `PackageFeeds.cs`, `NuspecParser.cs`: `depinv feed`, the published package versions read from an Azure Artifacts feed (`IPackageFeed`).
+  - `FeedCommand.cs`, `FeedScanner.cs`, `PackageFeeds.cs`, `NuspecParser.cs`: `depinv feed`, the published package versions read from an Azure Artifacts feed (`IPackageFeed`); `PackageFeeds.cs` also holds nuget.org.
+  - `PackageUsageAnalyzer.cs`, `PackageCatalog.cs`, `PackageContent.cs`, `SourceCodeParser.cs`: usage of the referenced packages by the code (`depinv packages`): package sources in order and local cache, public types read from the assemblies, names read from the C# syntax.
   - `RepositoryScanner.cs`, `FrameworkScanner.cs`, `RepositoryDiagnostics.cs`: scan of the repositories, without console access; `RepositoryWalker` is the walk both inventories share.
   - `ScanConsole.cs`: console output (header, messages, progress bar, summary).
   - `RepositoryProviders.cs`, `AzureDevOpsClient.cs`, `GitLabRepositoryProvider.cs`: Git hosting APIs.
@@ -37,8 +38,8 @@
 ## Rules
 
 - **Commits** follow Conventional Commits 1.0.0 and are written in English. `tools/commit-lint/lint-commit-message.sh` checks them, in CI on every pull request and locally once the hook is enabled with `git config core.hooksPath .githooks`.
-- **Reports are a contract.** `dependencies.csv`, `central-versions.csv`, `frameworks.csv`, `repositories.csv`, `package-frameworks.csv`, `package-dependencies.csv`, `packages.csv`, `report.json` and `diagnostics.json` must not change unless the change is intended. Enum names (`PackageKind`, `VersionSource`, `CoverageStatus`, `FrameworkSource`, `DependencyKind`, `PackageStatus`, `FrameworksFrom`) are written as-is in them: renaming a member changes the output.
-- **Read-only.** The tool never writes to Azure DevOps, Azure Artifacts or GitLab: GET requests only.
+- **Reports are a contract.** `dependencies.csv`, `central-versions.csv`, `used-types.csv`, `frameworks.csv`, `repositories.csv`, `package-frameworks.csv`, `package-dependencies.csv`, `packages.csv`, `report.json` and `diagnostics.json` must not change unless the change is intended. Enum names (`PackageKind`, `VersionSource`, `CoverageStatus`, `FrameworkSource`, `DependencyKind`, `PackageStatus`, `FrameworksFrom`, `PackageUsage`, `PackageSource`) are written as-is in them: renaming a member changes the output.
+- **Read-only.** The tool never writes to Azure DevOps, Azure Artifacts, GitLab or nuget.org: GET requests only. Its only writes are the reports and the local cache of package contents.
 - **Secrets** (PAT, login) are never logged nor serialized.
 - **Tests and warnings.** Every behavior change comes with a test. The build treats warnings as errors.
 - **Changelog.** A user-facing change (option, command, report, behavior, fix) adds a line under `[Unreleased]` in `CHANGELOG.md`, in the same pull request.

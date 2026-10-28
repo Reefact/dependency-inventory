@@ -7,7 +7,8 @@ namespace DependencyInventory;
 public sealed class FeedSettings : OriginSettings
 {
     [CommandOption("--feed <FEED>")]
-    [Description("Azure Artifacts feed: its name for an organization feed, project/name for a project feed.")]
+    [Description("Azure Artifacts feed: its name for an organization feed, project/name for a project feed, " +
+        "or its URL (https://dev.azure.com/organization[/project]/_packaging/feed).")]
     public string? Feed { get; init; }
 
     [CommandOption("--package <ID[@VERSION]>")]
@@ -75,8 +76,9 @@ public sealed class FeedCommand : AsyncCommand<FeedSettings>
         }
 
         var url = settings.Url ?? AnsiConsole.Ask<string>("[yellow]Source URL[/]:");
+        AzureOrigin origin;
         AzureFeed feedName;
-        try { feedName = AzureFeed.Parse(AzureOrigin.Parse(url), settings.Feed); }
+        try { feedName = AzureFeed.Parse(origin = AzureOrigin.Parse(url), settings.Feed); }
         catch (ArgumentException ex)
         {
             ScanConsole.Error(ex.Message);
@@ -123,7 +125,11 @@ public sealed class FeedCommand : AsyncCommand<FeedSettings>
         }
         if (packageFilter is not null) ScanConsole.Filters(packageFilter);
 
-        var (credentials, exitCode) = await OriginCredentials.ResolveAsync(settings, url, cancellationToken);
+        // A feed given by URL may belong to another organization, read with that organization's credentials.
+        var (credentials, exitCode) =
+            feedName.Organization.Equals(origin.Organization, StringComparison.OrdinalIgnoreCase)
+                ? await OriginCredentials.ResolveAsync(settings, url, cancellationToken)
+                : await OriginCredentials.ResolveOrganizationAsync(settings, feedName.Organization, cancellationToken);
         if (credentials is null) return exitCode;
 
         try
