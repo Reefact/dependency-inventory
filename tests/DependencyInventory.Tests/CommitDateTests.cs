@@ -52,6 +52,24 @@ public sealed class CommitDateTests
     }
 
     [Fact]
+    public async Task EveryRepositoryGivesItsAddressAndTheScannedCommit()
+    {
+        var api = Api();
+
+        var packages = await RepositoryScanner.ScanAsync(api, api.Repositories, Matcher, false,
+            ScanParallelism.Sequential, null, CancellationToken.None);
+        var frameworks = await FrameworkScanner.ScanAsync(api, api.Repositories, false, ScanParallelism.Sequential,
+            null, CancellationToken.None);
+
+        string?[] commits = ["api-sha", null, null];
+        string?[] urls = ["https://example/api", "https://example/old", "https://example/empty"];
+        Assert.Equal(commits, packages.Coverage.Select(c => c.Commit));
+        Assert.Equal(urls, packages.Coverage.Select(c => c.Url));
+        Assert.Equal(commits, frameworks.Coverage.Select(c => c.Commit));
+        Assert.Equal(urls, frameworks.Coverage.Select(c => c.Url));
+    }
+
+    [Fact]
     public async Task TheFrameworksInventoryGivesTheDateOfEveryScannedCommit()
     {
         var api = Api();
@@ -95,8 +113,8 @@ public sealed class CommitDateTests
         var report = new ScanReport(DateTimeOffset.UnixEpoch, "https://dev.azure.com/acme/project", [], [],
         [
             new("project", "api", "main", CoverageStatus.OK, 1, 0, null,
-                new DateTimeOffset(2026, 10, 28, 11, 42, 56, TimeSpan.FromHours(2))),
-            new("project", "old", null, CoverageStatus.Disabled, 0, 0, "Repository disabled")
+                new DateTimeOffset(2026, 10, 28, 11, 42, 56, TimeSpan.FromHours(2)), "abc", "https://example/api"),
+            new("project", "old", null, CoverageStatus.Disabled, 0, 0, "Repository disabled", Url: "https://example/old")
         ]);
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         try
@@ -105,9 +123,9 @@ public sealed class CommitDateTests
 
             Assert.Equal(
             [
-                "Scope;Repository;Branch;Status;FilesExamined;References;Details;CommitDate",
-                "project;api;main;OK;1;0;;2026-10-28T09:42:56Z",
-                "project;old;;Disabled;0;0;Repository disabled;"
+                "Scope;Repository;Branch;Commit;CommitDate;Status;FilesExamined;References;Details;Url",
+                "project;api;main;abc;2026-10-28T09:42:56Z;OK;1;0;;https://example/api",
+                "project;old;;;;Disabled;0;0;Repository disabled;https://example/old"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "repositories.csv")));
         }
         finally

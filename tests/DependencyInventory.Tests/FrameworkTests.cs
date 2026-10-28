@@ -263,7 +263,7 @@ public sealed class FrameworkTests
                     "https://example/lib")
             ],
             [new("project", "api", "main", CoverageStatus.NoProjectFiles, 3, 2, null,
-                new DateTimeOffset(2026, 10, 28, 11, 42, 56, TimeSpan.FromHours(2)))]);
+                new DateTimeOffset(2026, 10, 28, 11, 42, 56, TimeSpan.FromHours(2)), "abc", "https://example/repo")]);
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         try
         {
@@ -272,13 +272,15 @@ public sealed class FrameworkTests
             var frameworks = await File.ReadAllLinesAsync(Path.Combine(directory, "frameworks.csv"));
             Assert.Equal(
             [
-                "Scope;Repository;Branch;Commit;ProjectFile;Framework;FrameworkSource;Url;ProjectType",
-                "project;api;main;abc;/src/Api.csproj;net8.0;DirectoryBuildProps;https://example/api;Application",
-                "project;api;main;abc;/src/Lib.csproj;;Unresolved;https://example/lib;"
+                "Scope;Repository;Branch;Commit;ProjectFile;ProjectType;Framework;FrameworkSource;Url",
+                "project;api;main;abc;/src/Api.csproj;Application;net8.0;DirectoryBuildProps;https://example/api",
+                "project;api;main;abc;/src/Lib.csproj;;;Unresolved;https://example/lib"
             ], frameworks);
             var repositories = await File.ReadAllLinesAsync(Path.Combine(directory, "repositories.csv"));
-            Assert.Equal("Scope;Repository;Branch;Status;FilesExamined;Projects;Details;CommitDate", repositories[0]);
-            Assert.Equal("project;api;main;NoProjectFiles;3;2;;2026-10-28T09:42:56Z", repositories[1]);
+            Assert.Equal("Scope;Repository;Branch;Commit;CommitDate;Status;FilesExamined;Projects;Details;Url",
+                repositories[0]);
+            Assert.Equal("project;api;main;abc;2026-10-28T09:42:56Z;NoProjectFiles;3;2;;https://example/repo",
+                repositories[1]);
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
             Assert.Contains("\"FrameworkSource\": \"DirectoryBuildProps\"", json);
         }

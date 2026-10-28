@@ -70,7 +70,7 @@ public static class FrameworkScanner
         }
 
         if (repo.IsDisabled)
-            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), []),
+            return [(new(Coverage(repo, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), []),
                 NewDiagnostic())];
 
         BranchSelection selection;
@@ -78,7 +78,7 @@ public static class FrameworkScanner
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.Failed, 0, 0, ex.Message), []),
+            return [(new(Coverage(repo, null, CoverageStatus.Failed, 0, 0, ex.Message), []),
                 NewDiagnostic())];
         }
 
@@ -86,7 +86,7 @@ public static class FrameworkScanner
         {
             var none = NewDiagnostic();
             none?.AvailableBranches.AddRange(selection.Available.Select(b => b.Name));
-            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, selection.NoBranchReason),
+            return [(new(Coverage(repo, null, CoverageStatus.NoBranch, 0, 0, selection.NoBranchReason),
                 []), none)];
         }
 
@@ -109,12 +109,17 @@ public static class FrameworkScanner
                     {
                         Coverage = scan.Coverage with
                         {
-                            CommitDate = date, Details = RepositoryWalker.AddDetail(scan.Coverage.Details, dateError)
+                            Commit = branch.ObjectId, CommitDate = date, Details = RepositoryWalker.AddDetail(scan.Coverage.Details, dateError)
                         }
                     }, branchDiagnostic);
                 },
                 (done, branch) => (done.Scan.OnBranch(branch.Name), done.Diagnostic?.OnBranch(branch.Name)));
     }
+
+    /// <summary>The coverage of a repository, with its web address.</summary>
+    private static ProjectCoverage Coverage(Repository repo, string? branch, CoverageStatus status, int filesExamined,
+        int projects, string? details) =>
+        new(repo.Project, repo.Name, branch, status, filesExamined, projects, details, Url: repo.WebUrl);
 
     /// <summary>
     /// Scans the commit of one branch. Failures are reported in the coverage, never thrown, except cancellation.
@@ -161,13 +166,13 @@ public static class FrameworkScanner
 
             var status = failures.Count > 0 ? CoverageStatus.Partial
                 : projects.Length == 0 ? CoverageStatus.NoProjectFiles : CoverageStatus.OK;
-            return new(new(repo.Project, repo.Name, branchName, status, filesRead, projects.Length,
+            return new(Coverage(repo, branchName, status, filesRead, projects.Length,
                 failures.Count > 0 ? string.Join(" | ", failures.Take(5)) : null), frameworks);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
-            return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message),
+            return new(Coverage(repo, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message),
                 frameworks);
         }
     }

@@ -436,8 +436,8 @@ public sealed class TransitiveTests
             Assert.Equal(dependencies, await File.ReadAllTextAsync(Path.Combine(directory, "dependencies.csv")));
             Assert.Equal(
             [
-                "Scope;Repository;Branch;Commit;File;Framework;Package;Version;Via;Resolution;MatchedFilters;Usage;Source;Feed;ProjectType",
-                "project;api;main;abc;/App.csproj;net8.0;E;1.0.0;A > B > E;Computed;Glob:*;Used;NuGetOrg;;"
+                "Scope;Repository;Branch;Commit;File;ProjectType;Framework;Package;Version;Via;Resolution;MatchedFilters;Usage;Source;Feed",
+                "project;api;main;abc;/App.csproj;;net8.0;E;1.0.0;A > B > E;Computed;Glob:*;Used;NuGetOrg;"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "transitive-dependencies.csv")));
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
             Assert.Contains("\"Resolution\": \"Computed\"", json);
