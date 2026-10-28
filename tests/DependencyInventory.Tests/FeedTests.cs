@@ -705,6 +705,27 @@ public sealed class FeedTests
     }
 
     [Fact]
+    public async Task ARedirectToAnotherPortOfTheFeedHostIsReadWithoutTheCredentials()
+    {
+        var other = new UriBuilder(Base + "a/1.0.0/a.1.0.0.nupkg") { Port = 8443 }.Uri.AbsoluteUri;
+        var server = new StubServer(new()
+        {
+            [Index] = IndexResponse,
+            [Base + "a/1.0.0/a.1.0.0.nupkg"] = (HttpStatusCode.TemporaryRedirect, ""),
+            [other] = Ok("zip content")
+        }, new() { [Base + "a/1.0.0/a.1.0.0.nupkg"] = other });
+        var authenticated = new HttpClient(server);
+        authenticated.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", "secret");
+        using var feed = new AzureArtifactsFeed(new AzureFeed("acme", null, "feed"), authenticated, new HttpClient(server));
+
+        await using var package = await feed.GetPackageAsync("A", "1.0.0", default);
+
+        Assert.Equal("zip content", await new StreamReader(package!).ReadToEndAsync());
+        Assert.True(server.Authorized[Base + "a/1.0.0/a.1.0.0.nupkg"]);
+        Assert.False(server.Authorized[other]);
+    }
+
+    [Fact]
     public async Task ARedirectToAnAddressThatIsNotHttpsIsRefused()
     {
         var server = new StubServer(new()
