@@ -14,9 +14,10 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   project file and the nearest `Directory.Build.props` (OutputType, SDK, IsTestProject, AzureFunctionsVersion, test
   framework references, legacy ProjectTypeGuids, sample folders). It tells applications apart from libraries, tests
   and samples in the inventory. With `--diagnostics`, `diagnostics.json` gives the rule that classified each project.
-- **`repositories.csv` gives the date of every scanned commit**, in a new CommitDate column (committer date, ISO 8601
-  UTC), in `depinv packages` and `depinv frameworks`, to tell active repositories from abandoned ones. It costs one
-  request per scanned commit; a date that cannot be read stays empty and `Details` says why.
+- **`repositories.csv` gives the committer timestamp of each scanned branch tip**, in a new CommitDate column (ISO
+  8601 UTC), in `depinv packages` and `depinv frameworks`. It can help identify repositories whose latest commits are
+  old; it is not the time the commit reached the branch. It costs one request per scanned commit; a date that cannot
+  be read stays empty and `Details` says why.
 
 ### Changed
 

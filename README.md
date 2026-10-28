@@ -399,7 +399,7 @@ OutputType, IsTestProject, AzureFunctionsVersion and the test framework referenc
 
 ### Activity
 
-repositories.csv gives, in its CommitDate column, the committer date of the scanned commit: the day its last change landed on the scanned branch, in UTC (2026-10-28T09:42:56Z). It tells a repository changed last week from one untouched for years. The column is empty for a repository that was not scanned (Disabled, NoBranch, or a failure before its branch was read). Reading the date takes one more GET request per scanned commit; when it fails, the date stays empty and Details says why, without changing the status.
+repositories.csv gives, in its CommitDate column, the committer timestamp recorded in the commit currently pointed to by the scanned branch, in UTC (2026-10-28T09:42:56Z). It is not the time that commit was merged into or became the tip of that branch, and it does not prove that a repository is active or abandoned; it can help identify repositories whose latest commits are old. The column is empty for a repository that was not scanned (Disabled, NoBranch, or a failure before its branch was read). Reading the date takes one more GET request per scanned commit; when it fails, the date stays empty and Details says why, without changing the status.
 
 ### NuGet extraction
 
