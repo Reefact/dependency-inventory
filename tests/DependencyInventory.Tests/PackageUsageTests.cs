@@ -54,14 +54,16 @@ public sealed class PackageUsageTests
         ("lib/net8.0/Contoso.Design.dll", "namespace Contoso.Design { public class Tool { } }"));
 
     /// <summary>Two feeds then a nuget.org stand-in; Contoso.Design is a nuget.org package cached in the first feed.</summary>
+    private const string FeedAOrigin = "https://pkgs.dev.azure.com/acme/_packaging/feed-a/nuget/v3/index.json";
+
     private static (FakePackageFeed FeedA, FakePackageFeed FeedB, FakePackageFeed NuGetOrg) Feeds() => (
-        new FakePackageFeed()
+        new FakePackageFeed { Origin = FeedAOrigin }
             .AddPackage("Contoso.Messaging", "1.0.0", Messaging)
             .AddPackage("Contoso.Analyzers", "1.0.0", Analyzers)
             .Add("Contoso.Design", "1.0.0", null, Design).Cache("Contoso.Design", "1.0.0"),
-        new FakePackageFeed()
+        new FakePackageFeed { Origin = "https://pkgs.dev.azure.com/acme/project/_packaging/feed-b/nuget/v3/index.json" }
             .AddPackage("Contoso.Other", "1.0.0", Other),
-        new FakePackageFeed()
+        new FakePackageFeed { Origin = "https://api.nuget.org/v3/index.json" }
             .Add("Contoso.Other", "1.0.0", null, Other)
             .Add("Contoso.Testing", "1.0.0", null, Testing)
             .Add("Contoso.Testing.Core", "1.0.0", null, TestingCore));
@@ -240,6 +242,37 @@ public sealed class PackageUsageTests
     }
 
     [Fact]
+    public async Task AMetapackageBringsEachVersionItsFrameworksDependOn()
+    {
+        // net462 depends on Core 1.0.0, net8.0 on Core 2.0.0: the type of 2.0.0 is found.
+        var metapackage = TestPackages.Nupkg("Contoso.Meta", "1.0.0", TestPackages.Nuspec("Contoso.Meta", "1.0.0", """
+            <group targetFramework="net462"><dependency id="Contoso.Core" version="1.0.0" /></group>
+            <group targetFramework="net8.0"><dependency id="Contoso.Core" version="2.0.0" /></group>
+            """));
+        var feed = new FakePackageFeed()
+            .AddPackage("Contoso.Meta", "1.0.0", metapackage)
+            .AddPackage("Contoso.Core", "1.0.0", TestPackages.Nupkg("Contoso.Core", "1.0.0", null,
+                ("lib/net462/Contoso.Core.dll", "namespace Contoso.Core { public class Old { } }")))
+            .AddPackage("Contoso.Core", "2.0.0", TestPackages.Nupkg("Contoso.Core", "2.0.0", null,
+                ("lib/net8.0/Contoso.Core.dll", "namespace Contoso.Core { public class New { } }")));
+        var api = new FakeRepositoryProvider().AddRepository("app", files: new Dictionary<string, string>
+        {
+            ["/App.csproj"] = """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup><TargetFrameworks>net462;net8.0</TargetFrameworks></PropertyGroup>
+                  <ItemGroup><PackageReference Include="Contoso.Meta" Version="1.0.0" /></ItemGroup>
+                </Project>
+                """,
+            ["/App.cs"] = "using Contoso.Core; class App { New value; }"
+        });
+
+        var (references, _) = await ScanAsync(api,
+            new PackageCatalog([new PackageSourceEntry(feed, PackageSource.Feed, "feed")]));
+
+        Assert.Equal(["Contoso.Core.New"], Assert.Single(references).UsedTypes!.Select(t => t.Type));
+    }
+
+    [Fact]
     public async Task WithoutUsageAnalysisReferencesHaveNoUsage()
     {
         var api = Repository();
@@ -314,21 +347,49 @@ public sealed class PackageUsageTests
     }
 
     [Fact]
-    public async Task TheGlobalPackagesFolderIsReadBeforeAnyDownload()
+    public async Task TheCacheIsKeptPerSource()
+    {
+        var cache = Directory.CreateTempSubdirectory("depinv-cache-").FullName;
+        try
+        {
+            // Another feed holds a different package under the same id and version.
+            var (feedA, feedB, nugetOrg) = Feeds();
+            await Catalog(feedA, feedB, nugetOrg, cache)
+                .ResolveAsync("Contoso.Messaging", NuGetVersion.Parse("1.0.0"), default);
+            var other = new FakePackageFeed { Origin = "https://pkgs.dev.azure.com/partner/_packaging/libs/nuget/v3/index.json" }
+                .AddPackage("Contoso.Messaging", "1.0.0", TestPackages.Nupkg("Contoso.Messaging", "1.0.0", null,
+                    ("lib/net8.0/Contoso.Messaging.dll", "namespace Contoso.Messaging { public class Queue { } }")));
+
+            var resolution = await new PackageCatalog([new PackageSourceEntry(other, PackageSource.Feed, "libs")], cache)
+                .ResolveAsync("Contoso.Messaging", NuGetVersion.Parse("1.0.0"), default);
+
+            Assert.Equal(1, other.PackageReads);
+            Assert.Equal(["Contoso.Messaging.Queue"], resolution.Content!.Types.Select(t => t.FullName));
+        }
+        finally { Directory.Delete(cache, true); }
+    }
+
+    [Theory]
+    [InlineData("{\"version\":2,\"source\":\"" + FeedAOrigin + "\"}", true)]
+    [InlineData("{\"version\":2,\"source\":\"" + FeedAOrigin + "/\"}", true)]
+    [InlineData("{\"version\":2,\"source\":\"https://api.nuget.org/v3/index.json\"}", false)]
+    [InlineData("{}", false)]
+    [InlineData(null, false)]
+    public async Task TheGlobalPackagesFolderIsReadWhenExtractedFromTheSameSource(string? metadata, bool read)
     {
         var packages = Directory.CreateTempSubdirectory("depinv-packages-").FullName;
         try
         {
             var folder = Path.Combine(packages, "contoso.messaging", "1.0.0");
             System.IO.Compression.ZipFile.ExtractToDirectory(new MemoryStream(Messaging), folder);
-            File.WriteAllText(Path.Combine(folder, ".nupkg.metadata"), "{}");
+            if (metadata is not null) File.WriteAllText(Path.Combine(folder, ".nupkg.metadata"), metadata);
             var (feedA, feedB, nugetOrg) = Feeds();
 
             var resolution = await Catalog(feedA, feedB, nugetOrg, globalPackages: packages)
                 .ResolveAsync("Contoso.Messaging", NuGetVersion.Parse("1.0.0"), default);
 
-            Assert.Equal(0, feedA.PackageReads);
-            Assert.Equal("GlobalPackagesFolder", resolution.ReadFrom);
+            Assert.Equal(read ? 0 : 1, feedA.PackageReads);
+            Assert.Equal(read ? "GlobalPackagesFolder" : FeedAOrigin, resolution.ReadFrom);
             Assert.Contains(new PackageType("Contoso.Messaging", "Bus"), resolution.Content!.Types);
         }
         finally { Directory.Delete(packages, true); }
@@ -419,6 +480,52 @@ public sealed class PackageUsageTests
         Assert.Contains("Order", symbols.Names);
         Assert.DoesNotContain("App", symbols.Names);
         Assert.Equal(["Publish", "Sync"], symbols.InvokedMembers.Order());
+    }
+
+    [Fact]
+    public void NestedNamespacesAreImportedWithTheirFullName()
+    {
+        var symbols = SourceCodeParser.Parse("/A.cs", "namespace Contoso { namespace Messaging.Orders { class A { } } }");
+
+        Assert.Equal(["Contoso", "Contoso.Messaging", "Contoso.Messaging.Orders"], symbols.Imports.Order());
+    }
+
+    [Fact]
+    public void ANamespaceAliasIsExpandedInTheNamesItQualifies()
+    {
+        var symbols = SourceCodeParser.Parse("/A.cs", """
+            using Msg = Contoso.Messaging;
+            class A { Msg.Bus bus; Msg::Queue queue; }
+            """);
+
+        Assert.Contains("Contoso.Messaging.Bus", symbols.QualifiedNames);
+        Assert.Contains("Contoso.Messaging.Queue", symbols.QualifiedNames);
+    }
+
+    [Fact]
+    public void TheCodeOfDisabledConditionalBranchesIsRead()
+    {
+        var symbols = SourceCodeParser.Parse("/A.cs", """
+            #if NET8_0
+            using Contoso.Modern;
+            #endif
+            class A
+            {
+            #if DEBUG
+                Tracer tracer;
+            #if TRACE_ALL
+                Recorder recorder;
+            #endif
+            #else
+                void Run() => Logger.Write();
+            #endif
+            }
+            """);
+
+        Assert.Contains("Contoso.Modern", symbols.Imports);
+        Assert.Contains("Tracer", symbols.Names);
+        Assert.Contains("Recorder", symbols.Names);
+        Assert.Contains("Logger", symbols.Names);
     }
 
     [Theory]

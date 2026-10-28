@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using NuGet.Versioning;
 
@@ -140,11 +142,36 @@ public sealed class PackageCatalog
             : $"Not found in {searched}");
     }
 
+    /// <summary>A short name of a source for the cache folders: the beginning of the hash of its service index URL.</summary>
+    private static string SourceKey(string origin) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(origin.TrimEnd('/').ToLowerInvariant())))[..16];
+
+    /// <summary>
+    /// True when NuGet extracted the package in this folder from <paramref name="origin"/>, as its .nupkg.metadata
+    /// file says. NuGet writes that file last: without it, the extraction may be incomplete.
+    /// </summary>
+    private static async Task<bool> ExtractedFromAsync(string folder, string origin, CancellationToken ct)
+    {
+        var metadata = Path.Combine(folder, ".nupkg.metadata");
+        if (!File.Exists(metadata)) return false;
+        try
+        {
+            await using var stream = File.OpenRead(metadata);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            return document.RootElement.TryGetProperty("source", out var source) &&
+                string.Equals(source.GetString()?.TrimEnd('/'), origin.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException
+            or InvalidOperationException) { return false; }
+    }
+
     private async Task<(PackageContent Content, string ReadFrom)> ReadContentAsync(PackageSourceEntry source,
         string id, NuGetVersion version, CancellationToken ct)
     {
         var (lowerId, lowerVersion) = (id.ToLowerInvariant(), version.ToNormalizedString().ToLowerInvariant());
-        var cacheFile = _cacheDirectory is null ? null : Path.Combine(_cacheDirectory, lowerId, lowerVersion + ".json");
+        // Two feeds may hold different packages under the same id and version: the cache is kept per source.
+        var cacheFile = _cacheDirectory is null ? null
+            : Path.Combine(_cacheDirectory, SourceKey(source.Feed.Origin), lowerId, lowerVersion + ".json");
         if (cacheFile is not null && File.Exists(cacheFile))
         {
             try
@@ -159,8 +186,7 @@ public sealed class PackageCatalog
         PackageContent content;
         string readFrom;
         var extracted = _globalPackagesFolder is null ? null : Path.Combine(_globalPackagesFolder, lowerId, lowerVersion);
-        // NuGet writes the .nupkg.metadata file last: without it, the extraction may be incomplete.
-        if (extracted is not null && File.Exists(Path.Combine(extracted, ".nupkg.metadata")))
+        if (extracted is not null && await ExtractedFromAsync(extracted, source.Feed.Origin, ct))
         {
             content = PackageContentReader.ReadFolder(extracted);
             readFrom = "GlobalPackagesFolder";

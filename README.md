@@ -188,7 +188,8 @@ How the usage is decided:
   subfolder. A file references a type of the package when it names it (Bus, [Subscribe] for SubscribeAttribute) in a
   namespace it imports: using, global using, the enclosing namespace, the Using items of the project file and of the
   nearest Directory.Build.props, and the implicit usings of its SDK (ImplicitUsings). A fully qualified name, a
-  using static, an alias, and an extension method called in a file importing its namespace count as well.
+  using static, an alias, and an extension method called in a file importing its namespace count as well. The code of
+  disabled #if branches is read too, since the symbols a project defines are unknown.
 - A reference declared in a Directory.Build.props, packages.config or another imported file applies to every project
   under its folder.
 - A package without assemblies of its own, such as xunit, brings the types of its dependencies, for the target

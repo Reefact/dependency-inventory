@@ -193,13 +193,17 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
     {
         var groups = content.Dependencies.GroupBy(d => d.Framework ?? "", StringComparer.OrdinalIgnoreCase).ToArray();
         var parsed = frameworks.Select(NuGetFramework.Parse).Where(f => !f.IsUnsupported).ToArray();
-        if (parsed.Length == 0) return content.Dependencies.DistinctBy(d => d.Id.ToLowerInvariant());
+        // Frameworks may depend on different versions of a package: each version is kept.
+        if (parsed.Length == 0) return content.Dependencies.DistinctBy(DependencyKey);
         return parsed
             .SelectMany(framework => NuGetFrameworkUtility.GetNearest(groups, framework,
                 g => g.Key.Length == 0 ? NuGetFramework.AnyFramework : NuGetFramework.Parse(g.Key))
                 ?? Enumerable.Empty<NuspecDependency>())
-            .DistinctBy(d => d.Id.ToLowerInvariant());
+            .DistinctBy(DependencyKey);
     }
+
+    private static (string, string?) DependencyKey(NuspecDependency dependency) =>
+        (dependency.Id.ToLowerInvariant(), ResolveVersion(dependency.VersionRange)?.ToNormalizedString());
 
     // --- Projects and their source files
 

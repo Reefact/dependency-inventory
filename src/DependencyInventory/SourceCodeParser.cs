@@ -99,58 +99,98 @@ public static class SourceCodeParser
         path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) &&
         !NuGetDependencyParser.IsInExcludedFolder(path.Replace('\\', '/'));
 
+    // Disabled code holds nested #if blocks of its own: they are read this deep.
+    private const int MaxDisabledDepth = 3;
+
+    /// <summary>
+    /// Reads the names of a file. The code of disabled #if branches is read as well: which symbols the project defines
+    /// is unknown, and a package used only there is still used.
+    /// </summary>
     public static SourceSymbols Parse(string path, string text)
     {
-        var root = CSharpSyntaxTree.ParseText(text, Options, path).GetRoot();
-        var imports = new HashSet<string>(StringComparer.Ordinal);
-        var globalImports = new HashSet<string>(StringComparer.Ordinal);
-        var globalQualified = new HashSet<string>(StringComparer.Ordinal);
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        var qualified = new HashSet<string>(StringComparer.Ordinal);
-        var invoked = new HashSet<string>(StringComparer.Ordinal);
+        var symbols = new Collector();
+        symbols.Collect(CSharpSyntaxTree.ParseText(text, Options, path).GetRoot(), 0);
+        return new SourceSymbols(symbols.Imports, symbols.GlobalImports, symbols.GlobalQualified, symbols.Names,
+            symbols.Qualified, symbols.Invoked);
+    }
 
-        foreach (var node in root.DescendantNodes())
+    private sealed class Collector
+    {
+        public readonly HashSet<string> Imports = new(StringComparer.Ordinal);
+        public readonly HashSet<string> GlobalImports = new(StringComparer.Ordinal);
+        public readonly HashSet<string> GlobalQualified = new(StringComparer.Ordinal);
+        public readonly HashSet<string> Names = new(StringComparer.Ordinal);
+        public readonly HashSet<string> Qualified = new(StringComparer.Ordinal);
+        public readonly HashSet<string> Invoked = new(StringComparer.Ordinal);
+
+        // using Msg = Contoso.Messaging: Msg.Bus is Contoso.Messaging.Bus.
+        private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
+
+        public void Collect(SyntaxNode root, int depth)
         {
-            switch (node)
+            foreach (var node in root.DescendantNodes())
             {
-                case UsingDirectiveSyntax directive when Dotted(directive.NamespaceOrType) is { } target:
-                    // A plain using imports a namespace; using static and aliases name a type.
-                    var isGlobal = directive.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword);
-                    var isType = directive.StaticKeyword.IsKind(SyntaxKind.StaticKeyword) || directive.Alias is not null;
-                    (isType ? isGlobal ? globalQualified : qualified : isGlobal ? globalImports : imports).Add(target);
-                    break;
-                case BaseNamespaceDeclarationSyntax declaration when Dotted(declaration.Name) is { } ns:
-                    // Code in namespace A.B sees the types of A.B and of A.
-                    for (var scope = ns; scope.Length > 0; scope = scope.Contains('.') ? scope[..scope.LastIndexOf('.')] : "")
-                        imports.Add(scope);
-                    break;
-                case SimpleNameSyntax simple when !IsInDeclarationName(simple):
-                    names.Add(simple.Identifier.ValueText);
-                    break;
-                case QualifiedNameSyntax or AliasQualifiedNameSyntax or MemberAccessExpressionSyntax
-                    when !IsInDeclarationName(node) && Dotted(node) is { } dotted:
-                    qualified.Add(dotted);
-                    break;
+                switch (node)
+                {
+                    case UsingDirectiveSyntax directive when Dotted(directive.NamespaceOrType) is { } target:
+                        // A plain using imports a namespace; using static and aliases name a type, or a namespace
+                        // for an alias, which is then expanded in the names it qualifies.
+                        var isGlobal = directive.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword);
+                        var isType = directive.StaticKeyword.IsKind(SyntaxKind.StaticKeyword) || directive.Alias is not null;
+                        (isType ? isGlobal ? GlobalQualified : Qualified : isGlobal ? GlobalImports : Imports).Add(target);
+                        if (directive.Alias is { } alias) _aliases[alias.Name.Identifier.ValueText] = target;
+                        break;
+                    case BaseNamespaceDeclarationSyntax declaration when FullNamespace(declaration) is { } ns:
+                        // Code in namespace A.B sees the types of A.B and of A.
+                        for (var scope = ns; scope.Length > 0; scope = scope.Contains('.') ? scope[..scope.LastIndexOf('.')] : "")
+                            Imports.Add(scope);
+                        break;
+                    case SimpleNameSyntax simple when !IsInDeclarationName(simple):
+                        Names.Add(simple.Identifier.ValueText);
+                        break;
+                    case QualifiedNameSyntax or AliasQualifiedNameSyntax or MemberAccessExpressionSyntax
+                        when !IsInDeclarationName(node) && Dotted(node) is { } dotted:
+                        AddQualified(dotted);
+                        break;
+                }
+
+                if (node is AttributeSyntax attribute)
+                {
+                    // [Fact] is FactAttribute: both spellings are kept.
+                    if (Dotted(attribute.Name) is { } attributeName) AddQualified(attributeName + "Attribute");
+                    Names.Add(RightmostName(attribute.Name) + "Attribute");
+                }
+                else if (node is InvocationExpressionSyntax invocation)
+                {
+                    var member = invocation.Expression switch
+                    {
+                        MemberAccessExpressionSyntax access => access.Name.Identifier.ValueText,
+                        MemberBindingExpressionSyntax binding => binding.Name.Identifier.ValueText,
+                        _ => null
+                    };
+                    if (member is not null) Invoked.Add(member);
+                }
             }
 
-            if (node is AttributeSyntax attribute)
-            {
-                // [Fact] is FactAttribute: both spellings are kept.
-                if (Dotted(attribute.Name) is { } attributeName) qualified.Add(attributeName + "Attribute");
-                names.Add(RightmostName(attribute.Name) + "Attribute");
-            }
-            else if (node is InvocationExpressionSyntax invocation)
-            {
-                var member = invocation.Expression switch
-                {
-                    MemberAccessExpressionSyntax access => access.Name.Identifier.ValueText,
-                    MemberBindingExpressionSyntax binding => binding.Name.Identifier.ValueText,
-                    _ => null
-                };
-                if (member is not null) invoked.Add(member);
-            }
+            if (depth >= MaxDisabledDepth) return;
+            foreach (var disabled in root.DescendantTrivia().Where(t => t.IsKind(SyntaxKind.DisabledTextTrivia)))
+                Collect(CSharpSyntaxTree.ParseText(disabled.ToString(), Options).GetRoot(), depth + 1);
         }
-        return new SourceSymbols(imports, globalImports, globalQualified, names, qualified, invoked);
+
+        private void AddQualified(string dotted)
+        {
+            Qualified.Add(dotted);
+            var first = dotted.IndexOf('.') is var dot and >= 0 ? dotted[..dot] : dotted;
+            if (_aliases.TryGetValue(first, out var target)) Qualified.Add(target + dotted[first.Length..]);
+        }
+    }
+
+    /// <summary>The full name of a namespace, nested in others or not: namespace A { namespace B } is A.B.</summary>
+    private static string? FullNamespace(BaseNamespaceDeclarationSyntax declaration)
+    {
+        var parts = declaration.AncestorsAndSelf().OfType<BaseNamespaceDeclarationSyntax>()
+            .Select(d => Dotted(d.Name)).Reverse().ToArray();
+        return parts.Any(p => p is null) ? null : string.Join('.', parts);
     }
 
     // Names in using directives and namespace declarations are imports, not references.
@@ -171,7 +211,9 @@ public static class SourceCodeParser
     {
         SimpleNameSyntax simple => simple.Identifier.ValueText,
         QualifiedNameSyntax q => Join(Dotted(q.Left), q.Right.Identifier.ValueText),
+        // global::A is A; Msg::Bus is Msg.Bus, which the alias expands.
         AliasQualifiedNameSyntax { Alias.Identifier.ValueText: "global" } a => a.Name.Identifier.ValueText,
+        AliasQualifiedNameSyntax a => $"{a.Alias.Identifier.ValueText}.{a.Name.Identifier.ValueText}",
         MemberAccessExpressionSyntax { RawKind: (int)SyntaxKind.SimpleMemberAccessExpression } m =>
             Join(Dotted(m.Expression), m.Name.Identifier.ValueText),
         _ => null
