@@ -8,6 +8,14 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+### Added
+
+- **`depinv login` and `depinv logout` store the credentials in the Secret Service on Linux** (GNOME Keyring,
+  KWallet), through the `secret-tool` command (package `libsecret-tools` on Debian and Ubuntu), and scans read them
+  from there, as on Windows. Where no Secret Service can be reached, `login` and `logout` end with the reason and exit
+  code 2, and scans print it and ask for the credentials. `--credentials-file` remains available on Linux, for
+  unattended runs.
+
 ## [1.0.0-preview.8] - 2026-10-28
 
 ### Added

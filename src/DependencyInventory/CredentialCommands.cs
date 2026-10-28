@@ -22,8 +22,11 @@ public sealed class LoginCommand : Command<CredentialSettings>
     {
         if (CredentialCommand.Resolve(settings) is not var (store, key)) return 2;
 
-        switch (VaultOperations.Login(store, key, () => CredentialPrompt.Ask(settings.Provider), cancellationToken))
+        switch (CredentialCommand.Change(() =>
+            VaultOperations.Login(store, key, () => CredentialPrompt.Ask(settings.Provider), cancellationToken)))
         {
+            case null:
+                return 2;
             case VaultChange.Cancelled:
                 ScanConsole.Warning("Login cancelled; the stored credentials are unchanged.");
                 return 130;
@@ -45,8 +48,10 @@ public sealed class LogoutCommand : Command<CredentialSettings>
     {
         if (CredentialCommand.Resolve(settings) is not var (store, key)) return 2;
 
-        switch (VaultOperations.Logout(store, key, cancellationToken))
+        switch (CredentialCommand.Change(() => VaultOperations.Logout(store, key, cancellationToken)))
         {
+            case null:
+                return 2;
             case VaultChange.Cancelled:
                 ScanConsole.Warning("Logout cancelled; the stored credentials are unchanged.");
                 return 130;
@@ -73,6 +78,8 @@ public static class VaultOperations
     public static VaultChange Login(ICredentialStore store, string key,
         Func<RepositoryCredentials?> prompt, CancellationToken ct)
     {
+        // Reading the entry first reports a vault that cannot be reached before the user types the credentials.
+        store.Read(key);
         var credentials = prompt();
         if (ct.IsCancellationRequested) return VaultChange.Cancelled;
         if (credentials is null) return VaultChange.MissingCredentials;
@@ -105,6 +112,20 @@ internal static class CredentialCommand
             return (store, CredentialStores.KeyFor(settings.Provider, url));
         }
         catch (ArgumentException ex)
+        {
+            ScanConsole.Error(ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>The change made to the vault, or null after reporting that the vault cannot be reached.</summary>
+    public static VaultChange? Change(Func<VaultChange> change)
+    {
+        try
+        {
+            return change();
+        }
+        catch (CredentialStoreUnavailableException ex)
         {
             ScanConsole.Error(ex.Message);
             return null;

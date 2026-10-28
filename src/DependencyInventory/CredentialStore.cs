@@ -16,13 +16,25 @@ public interface ICredentialStore
 
     /// <summary>Returns false when no entry exists for the key.</summary>
     bool Delete(string key);
+
+    /// <summary>
+    /// Whether --credentials-file is still accepted next to this vault: on systems where the vault may be missing,
+    /// such as a Linux server without a Secret Service, files remain the way to run unattended.
+    /// </summary>
+    bool AcceptsCredentialsFiles => false;
 }
+
+/// <summary>The vault cannot be reached, e.g. no Secret Service runs or its tool is not installed.</summary>
+public sealed class CredentialStoreUnavailableException(string message, Exception? inner = null)
+    : Exception(message, inner);
 
 public static class CredentialStores
 {
     /// <summary>The vault of the current system, or null where none is supported yet.</summary>
     public static ICredentialStore? ForCurrentPlatform() =>
-        OperatingSystem.IsWindows() ? new WindowsCredentialStore() : null;
+        OperatingSystem.IsWindows() ? new WindowsCredentialStore()
+        : OperatingSystem.IsLinux() ? new SecretServiceStore()
+        : null;
 
     /// <summary>
     /// One entry per provider and origin: an Azure DevOps PAT belongs to an organization,
@@ -43,7 +55,9 @@ public static class CredentialStores
 
 public enum CredentialSource { File, Store, Prompt }
 
-public sealed record ResolvedCredentials(RepositoryCredentials? Credentials, CredentialSource Source);
+/// <param name="StoreUnavailable">Why the vault could not be read, when the prompt replaced it.</param>
+public sealed record ResolvedCredentials(RepositoryCredentials? Credentials, CredentialSource Source,
+    string? StoreUnavailable = null);
 
 public static class CredentialResolver
 {
@@ -52,8 +66,8 @@ public static class CredentialResolver
     /// only the login command does. File errors are left to the caller.
     /// </summary>
     /// <exception cref="NotSupportedException">
-    /// A credentials file is requested on a system with a vault: files are only accepted where no vault is
-    /// supported yet, until they are removed.
+    /// A credentials file is requested next to a vault that does not accept them (Windows): files are only
+    /// accepted where a vault may be missing, until they are removed.
     /// </exception>
     public static Task<ResolvedCredentials> ResolveAsync(SourceProvider provider, string url,
         bool useFile, string? filePath, ICredentialStore? store, Func<RepositoryCredentials?> prompt,
@@ -67,7 +81,7 @@ public static class CredentialResolver
     {
         if (useFile)
         {
-            if (store is not null)
+            if (store is { AcceptsCredentialsFiles: false })
                 throw new NotSupportedException(
                     $"--credentials-file is not available with the {store.Name}: store the credentials " +
                     "once with \"depinv login\".");
@@ -75,8 +89,15 @@ public static class CredentialResolver
             return new(await CredentialsFile.ReadAsync(path, provider, ct), CredentialSource.File);
         }
 
-        if (store?.Read(key()) is { } stored)
-            return new(stored, CredentialSource.Store);
+        try
+        {
+            if (store?.Read(key()) is { } stored)
+                return new(stored, CredentialSource.Store);
+        }
+        catch (CredentialStoreUnavailableException ex)
+        {
+            return new(prompt(), CredentialSource.Prompt, ex.Message);
+        }
 
         return new(prompt(), CredentialSource.Prompt);
     }
@@ -183,3 +204,125 @@ public sealed class WindowsCredentialStore : ICredentialStore
     [DllImport("advapi32.dll")]
     private static extern void CredFree(IntPtr buffer);
 }
+
+/// <summary>
+/// The Secret Service of Linux (GNOME Keyring, KWallet), through its secret-tool command. Each entry has the key
+/// and the login as attributes, the PAT as secret. The PAT is passed on standard input, never on a command line,
+/// which other users can read.
+/// </summary>
+public sealed class SecretServiceStore : ICredentialStore
+{
+    private const string KeyAttribute = "key";
+    private const string LoginAttribute = "login";
+
+    /// <summary>Runs secret-tool with the arguments and the standard input given.</summary>
+    public delegate SecretToolResult Runner(IReadOnlyList<string> arguments, string? input);
+
+    private readonly Runner _run;
+
+    public SecretServiceStore() : this(RunSecretTool) { }
+
+    public SecretServiceStore(Runner run) => _run = run;
+
+    public string Name => "Secret Service";
+
+    public bool AcceptsCredentialsFiles => true;
+
+    public RepositoryCredentials? Read(string key)
+    {
+        // search writes the secret on standard output and the attributes on standard error; an empty output
+        // means no entry.
+        var result = Run(["search", "--all", "--unlock", KeyAttribute, key], null);
+        if (result.Output.Length == 0) return null;
+        var pat = Field(result.Output, "secret") ??
+            throw new CredentialStoreUnavailableException("The Secret Service entry could not be unlocked.");
+        var login = Field(result.Output, "attribute." + LoginAttribute) ??
+            Field(result.Error, "attribute." + LoginAttribute) ?? "";
+        return new RepositoryCredentials(login, pat);
+    }
+
+    public void Write(string key, RepositoryCredentials credentials)
+    {
+        // An entry stored with the same attributes replaces the previous one; one stored for another login is
+        // deleted once the new one exists, so a failure leaves the previous credentials in place.
+        var previous = Read(key);
+        List<string> arguments = ["store", $"--label=depinv {key}", KeyAttribute, key];
+        if (credentials.Login.Length > 0) arguments.AddRange([LoginAttribute, credentials.Login]);
+        Run(arguments, credentials.Pat);
+        if (previous is not null && previous.Login.Length > 0 && previous.Login != credentials.Login)
+            Clear([KeyAttribute, key, LoginAttribute, previous.Login]);
+    }
+
+    public bool Delete(string key) => Clear([KeyAttribute, key]);
+
+    /// <summary>secret-tool clear ends with 1 and says nothing when no entry matches.</summary>
+    private bool Clear(IReadOnlyList<string> attributes)
+    {
+        var result = _run(["clear", .. attributes], null);
+        if (result.ExitCode == 0) return true;
+        if (result.ExitCode == 1 && result.Error.Trim().Length == 0) return false;
+        throw Unavailable(result);
+    }
+
+    private SecretToolResult Run(IReadOnlyList<string> arguments, string? input)
+    {
+        var result = _run(arguments, input);
+        return result.ExitCode == 0 ? result : throw Unavailable(result);
+    }
+
+    private static CredentialStoreUnavailableException Unavailable(SecretToolResult result) =>
+        new($"The Secret Service is not available: {FirstLine(result.Error) ?? $"secret-tool exit code {result.ExitCode}"}");
+
+    /// <summary>The first line of a secret-tool message, without its "secret-tool: " prefix.</summary>
+    private static string? FirstLine(string text)
+    {
+        const string prefix = "secret-tool: ";
+        var line = text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+        return line?.StartsWith(prefix, StringComparison.Ordinal) == true ? line[prefix.Length..] : line;
+    }
+
+    /// <summary>The value of the first "name = value" line, or null.</summary>
+    private static string? Field(string text, string name)
+    {
+        var prefix = name + " = ";
+        return text.Split('\n').Select(line => line.TrimEnd('\r'))
+            .FirstOrDefault(line => line.StartsWith(prefix, StringComparison.Ordinal))?[prefix.Length..];
+    }
+
+    private static SecretToolResult RunSecretTool(IReadOnlyList<string> arguments, string? input)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("secret-tool")
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+
+        System.Diagnostics.Process process;
+        try
+        {
+            process = System.Diagnostics.Process.Start(start)!;
+        }
+        catch (Win32Exception ex)
+        {
+            throw new CredentialStoreUnavailableException(
+                "The Secret Service is not available: secret-tool was not found. Install it (package " +
+                "libsecret-tools on Debian and Ubuntu, libsecret elsewhere).", ex);
+        }
+
+        using (process)
+        {
+            var output = process.StandardOutput.ReadToEndAsync();
+            var error = process.StandardError.ReadToEndAsync();
+            if (input is not null) process.StandardInput.Write(input);
+            process.StandardInput.Close();
+            process.WaitForExit();
+            return new SecretToolResult(process.ExitCode, output.Result, error.Result);
+        }
+    }
+}
+
+public sealed record SecretToolResult(int ExitCode, string Output, string Error);
