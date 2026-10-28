@@ -232,7 +232,8 @@ new major version; `diagnostics.json` stays outside that commitment.
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory --prerelease` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
-[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.8...HEAD
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.8...v1.0.0-rc.1
 [1.0.0-preview.8]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.7...v1.0.0-preview.8
 [1.0.0-preview.7]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.6...v1.0.0-preview.7
 [1.0.0-preview.6]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.5...v1.0.0-preview.6
