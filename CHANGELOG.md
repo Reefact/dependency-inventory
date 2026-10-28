@@ -20,6 +20,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   cannot be used, such as a locked keychain in an SSH session, `login` and `logout` end with the reason and exit code
   2, and scans print it and ask for the credentials. `--credentials-file` remains available on macOS, for unattended
   runs.
+- **`repositories.csv` gives the Commit scanned and the Url of each repository**, in both inventories, and
+  `report.json` gains the same fields: the lines of the branches of a repository can be told apart by their commit.
 
 ### Changed
 
@@ -44,8 +46,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   as before (Excel opens them directly where the decimal separator is a comma, as in French), and
   `--csv-delimiter tab` separates them with tabs. `depinv feed --versions-from` reads a `dependencies.csv` whatever
   its separator, older reports included.
-- **`repositories.csv` gives the Commit scanned and the Url of each repository**, as `report.json` does, so that the
-  lines of several branches can be told apart.
+- **`diagnostics.json` is no longer part of the stable report format**: as a troubleshooting aid, its content may change
+  in any version, unlike the CSV reports and `report.json`.
 
 ### Fixed
 

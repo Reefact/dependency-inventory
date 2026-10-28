@@ -451,7 +451,7 @@ The 120 s timeout applies to each attempt, including the time needed to read the
 depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --repository api-order-bo --diagnostics
 ~~~
 
-The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and their dates and the files examined, and in Usages how the usage of every reference was decided: the projects and source files analyzed, where the package was read from (Cache, GlobalPackagesFolder or the source), and the reason of an Undetermined or BuildOnly usage. With `depinv frameworks`, it lists the frameworks declared by every file examined instead.
+The diagnostics.json file lists every NuGet reference extracted, even outside the filters, the available branches, the selected one, the commits and their dates and the files examined, and in Usages how the usage of every reference was decided: the projects and source files analyzed, where the package was read from (Cache, GlobalPackagesFolder or the source), and the reason of an Undetermined or BuildOnly usage. With `depinv frameworks`, it lists the frameworks declared by every file examined instead. diagnostics.json is a troubleshooting aid: unlike the other reports, its content may change in any version, so do not build on it.
 
 ## 🤝 Contributing
 
