@@ -75,3 +75,31 @@ jobs:
       - name: Pack (smoke test, no publish)
         if: matrix.os == 'ubuntu-latest'
         run: dotnet pack src/DependencyInventory/DependencyInventory.csproj -c Release --no-build -p:Version=0.0.0-ci -o artifacts
+
+  # The macOS Keychain round trip, on a keychain created, unlocked and made the default for this run only. The rest
+  # of the suite runs on the Ubuntu and Windows legs.
+  keychain:
+    name: Keychain (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Create an unlocked default keychain
+        run: |
+          security create-keychain -p ci depinv-ci.keychain
+          security set-keychain-settings depinv-ci.keychain
+          security unlock-keychain -p ci depinv-ci.keychain
+          security list-keychains -d user -s depinv-ci.keychain
+          security default-keychain -d user -s depinv-ci.keychain
+
+      - name: Test the macOS Keychain store
+        env:
+          DEPINV_TEST_KEYCHAIN: '1'
+        run: dotnet test DependencyInventory.sln -c Release --filter "FullyQualifiedName~MacKeychain" --logger "console;verbosity=normal"

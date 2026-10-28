@@ -18,13 +18,17 @@ public interface ICredentialStore
     bool Delete(string key);
 
     /// <summary>
-    /// Whether --credentials-file is still accepted next to this vault: on systems where the vault may be missing,
-    /// such as a Linux server without a Secret Service, files remain the way to run unattended.
+    /// Whether --credentials-file is still accepted next to this vault: on systems where the vault may be missing
+    /// or locked, such as a Linux server without a Secret Service or a macOS SSH session, files remain the way to
+    /// run unattended.
     /// </summary>
     bool AcceptsCredentialsFiles => false;
 }
 
-/// <summary>The vault cannot be reached, e.g. no Secret Service runs or its tool is not installed.</summary>
+/// <summary>
+/// The vault cannot be reached, e.g. no Secret Service runs, its tool is not installed or the macOS keychain is
+/// locked.
+/// </summary>
 public sealed class CredentialStoreUnavailableException(string message, Exception? inner = null)
     : Exception(message, inner);
 
@@ -34,6 +38,7 @@ public static class CredentialStores
     public static ICredentialStore? ForCurrentPlatform() =>
         OperatingSystem.IsWindows() ? new WindowsCredentialStore()
         : OperatingSystem.IsLinux() ? new SecretServiceStore()
+        : OperatingSystem.IsMacOS() ? new MacKeychainStore()
         : null;
 
     /// <summary>
@@ -352,3 +357,212 @@ public sealed class SecretServiceStore : ICredentialStore
 }
 
 public sealed record SecretToolResult(int ExitCode, string Output, string Error);
+
+/// <summary>
+/// Generic passwords of the macOS default keychain (the login keychain), through the Security framework: the entry
+/// key is the service, the login the account, the PAT the password. An entry is replaced in place, account and
+/// password together, so a failure leaves the previous credentials whole.
+/// </summary>
+[SupportedOSPlatform("macos")]
+public sealed class MacKeychainStore : ICredentialStore
+{
+    private const string Security = "/System/Library/Frameworks/Security.framework/Security";
+    private const string CoreFoundation = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
+    private const int ItemNotFound = -25300;          // errSecItemNotFound
+    private const uint AccountAttribute = 0x61636374; // kSecAccountItemAttr ('acct')
+    private const uint Utf8Encoding = 0x08000100;     // kCFStringEncodingUTF8
+    private const string NoLogin = "-";               // Stored for GitLab, whose PAT has no login.
+
+    public string Name => "macOS Keychain";
+
+    public bool AcceptsCredentialsFiles => true;
+
+    public RepositoryCredentials? Read(string key)
+    {
+        var item = Find(key, out var pat);
+        if (item == IntPtr.Zero) return null;
+        try
+        {
+            var login = Account(item);
+            return new RepositoryCredentials(login == NoLogin ? "" : login, pat);
+        }
+        finally
+        {
+            CFRelease(item);
+        }
+    }
+
+    public void Write(string key, RepositoryCredentials credentials)
+    {
+        var account = Encoding.UTF8.GetBytes(credentials.Login.Length == 0 ? NoLogin : credentials.Login);
+        var secret = Encoding.UTF8.GetBytes(credentials.Pat);
+        try
+        {
+            var item = Find(key, out _);
+            if (item == IntPtr.Zero)
+            {
+                var service = Encoding.UTF8.GetBytes(key);
+                Check(SecKeychainAddGenericPassword(IntPtr.Zero, (uint)service.Length, service,
+                    (uint)account.Length, account, (uint)secret.Length, secret, IntPtr.Zero));
+                return;
+            }
+
+            var data = Marshal.AllocHGlobal(account.Length);
+            var attributes = Marshal.AllocHGlobal(Marshal.SizeOf<KeychainAttribute>());
+            try
+            {
+                Marshal.Copy(account, 0, data, account.Length);
+                Marshal.StructureToPtr(
+                    new KeychainAttribute { Tag = AccountAttribute, Length = (uint)account.Length, Data = data },
+                    attributes, false);
+                var list = new KeychainAttributeList { Count = 1, Attributes = attributes };
+                Check(SecKeychainItemModifyAttributesAndData(item, ref list, (uint)secret.Length, secret));
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(attributes);
+                Marshal.FreeHGlobal(data);
+                CFRelease(item);
+            }
+        }
+        finally
+        {
+            Array.Clear(secret);
+        }
+    }
+
+    public bool Delete(string key)
+    {
+        var item = Find(key, out _);
+        if (item == IntPtr.Zero) return false;
+        try
+        {
+            Check(SecKeychainItemDelete(item));
+            return true;
+        }
+        finally
+        {
+            CFRelease(item);
+        }
+    }
+
+    /// <summary>The entry of the key, whatever its account, and its password; IntPtr.Zero when none exists.</summary>
+    private static IntPtr Find(string key, out string password)
+    {
+        var service = Encoding.UTF8.GetBytes(key);
+        var status = SecKeychainFindGenericPassword(IntPtr.Zero, (uint)service.Length, service, 0, null,
+            out var length, out var data, out var item);
+        password = "";
+        if (status == ItemNotFound) return IntPtr.Zero;
+        Check(status);
+        try
+        {
+            if (length > 0) password = Marshal.PtrToStringUTF8(data, (int)length);
+        }
+        finally
+        {
+            SecKeychainItemFreeContent(IntPtr.Zero, data);
+        }
+        return item;
+    }
+
+    private static string Account(IntPtr item)
+    {
+        var attributes = Marshal.AllocHGlobal(Marshal.SizeOf<KeychainAttribute>());
+        try
+        {
+            Marshal.StructureToPtr(new KeychainAttribute { Tag = AccountAttribute }, attributes, false);
+            var list = new KeychainAttributeList { Count = 1, Attributes = attributes };
+            Check(SecKeychainItemCopyContent(item, IntPtr.Zero, ref list, IntPtr.Zero, IntPtr.Zero));
+            try
+            {
+                var account = Marshal.PtrToStructure<KeychainAttribute>(attributes);
+                return account.Length == 0 ? "" : Marshal.PtrToStringUTF8(account.Data, (int)account.Length);
+            }
+            finally
+            {
+                SecKeychainItemFreeContent(ref list, IntPtr.Zero);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(attributes);
+        }
+    }
+
+    /// <summary>Any failure but a missing entry, such as a locked keychain over SSH, makes the vault unavailable.</summary>
+    private static void Check(int status)
+    {
+        if (status != 0)
+            throw new CredentialStoreUnavailableException($"The macOS Keychain is not available: {Message(status)}");
+    }
+
+    private static string Message(int status)
+    {
+        var message = SecCopyErrorMessageString(status, IntPtr.Zero);
+        if (message == IntPtr.Zero) return $"OSStatus {status}.";
+        try
+        {
+            var buffer = new byte[1024];
+            if (!CFStringGetCString(message, buffer, buffer.Length, Utf8Encoding)) return $"OSStatus {status}.";
+            var end = Array.IndexOf(buffer, (byte)0);
+            return Encoding.UTF8.GetString(buffer, 0, end < 0 ? buffer.Length : end);
+        }
+        finally
+        {
+            CFRelease(message);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KeychainAttribute
+    {
+        public uint Tag;
+        public uint Length;
+        public IntPtr Data;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KeychainAttributeList
+    {
+        public uint Count;
+        public IntPtr Attributes;
+    }
+
+    [DllImport(Security)]
+    private static extern int SecKeychainFindGenericPassword(IntPtr keychainOrArray, uint serviceNameLength,
+        byte[] serviceName, uint accountNameLength, byte[]? accountName, out uint passwordLength,
+        out IntPtr passwordData, out IntPtr itemRef);
+
+    [DllImport(Security)]
+    private static extern int SecKeychainAddGenericPassword(IntPtr keychain, uint serviceNameLength,
+        byte[] serviceName, uint accountNameLength, byte[] accountName, uint passwordLength, byte[] passwordData,
+        IntPtr itemRef);
+
+    [DllImport(Security)]
+    private static extern int SecKeychainItemCopyContent(IntPtr itemRef, IntPtr itemClass,
+        ref KeychainAttributeList attrList, IntPtr length, IntPtr outData);
+
+    [DllImport(Security)]
+    private static extern int SecKeychainItemModifyAttributesAndData(IntPtr itemRef,
+        ref KeychainAttributeList attrList, uint length, byte[] data);
+
+    [DllImport(Security)]
+    private static extern int SecKeychainItemDelete(IntPtr itemRef);
+
+    [DllImport(Security)]
+    private static extern int SecKeychainItemFreeContent(IntPtr attrList, IntPtr data);
+
+    [DllImport(Security)]
+    private static extern int SecKeychainItemFreeContent(ref KeychainAttributeList attrList, IntPtr data);
+
+    [DllImport(Security)]
+    private static extern IntPtr SecCopyErrorMessageString(int status, IntPtr reserved);
+
+    [DllImport(CoreFoundation)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool CFStringGetCString(IntPtr theString, byte[] buffer, nint bufferSize, uint encoding);
+
+    [DllImport(CoreFoundation)]
+    private static extern void CFRelease(IntPtr cf);
+}

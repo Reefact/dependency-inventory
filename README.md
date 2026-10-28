@@ -84,22 +84,24 @@ Only a PAT is needed (see Authentication), with the read_api scope and access ri
 
 Credentials are resolved in this order: a credentials file when --credentials-file is given (Linux and macOS only), then the credentials stored in the system vault, then an interactive prompt.
 
-### Windows and Linux: store the credentials once
+### Store the credentials once
 
 ~~~powershell
 depinv login --provider azure --url "https://dev.azure.com/Organization/Project"
 depinv login --provider gitlab --url "https://gitlab.example.com/red/web"
 ~~~
 
-login asks once for the Azure DevOps login and PAT, or for the GitLab PAT, and stores them in the system vault: the Windows Credential Manager, encrypted with your Windows account, or on Linux the Secret Service (GNOME Keyring, KWallet). There is one entry per Azure DevOps organization and per GitLab instance. Scans then use them without prompting; a scan never writes to the vault. logout, with the same options, deletes them.
+login asks once for the Azure DevOps login and PAT, or for the GitLab PAT, and stores them in the system vault: the Windows Credential Manager, encrypted with your Windows account, on macOS the login keychain, or on Linux the Secret Service (GNOME Keyring, KWallet). There is one entry per Azure DevOps organization and per GitLab instance. Scans then use them without prompting; a scan never writes to the vault. logout, with the same options, deletes them.
 
 On Linux, the Secret Service is reached through the secret-tool command (package libsecret-tools on Debian and Ubuntu, libsecret elsewhere); the PAT is passed on its standard input, never on its command line. Each entry is labelled "depinv" followed by its key, with the key and the login as attributes. Where no Secret Service can be reached, such as a server without a desktop session, login and logout end with the reason and exit code 2, and scans print it and ask for the credentials, unless --credentials-file is given.
+
+On macOS, each entry is a generic password of the default keychain, usually the login keychain, whose service is its key and whose account is the login. macOS may ask once to let depinv read it, for example after an update of the tool. Where the keychain cannot be used, such as a locked keychain in an SSH session, login and logout end with the reason and exit code 2, and scans print it and ask for the credentials, unless --credentials-file is given.
 
 --credentials-file is not available on Windows.
 
 ### Linux and macOS: credentials file
 
-The macOS Keychain is not supported yet ([#16](https://github.com/Reefact/dependency-inventory/issues/16)); until then, on macOS, credentials are either typed at each scan, or read from a file with --credentials-file. On Linux, the file serves unattended runs where no Secret Service is available.
+Where the vault cannot be used, such as unattended runs on a server, credentials are either typed at each scan, or read from a file with --credentials-file.
 
 - With --credentials-file and no value, the CLI reads .azure-credentials or .gitlab-credentials, depending on --provider, in the current folder.
 - With --credentials-file followed by a path, it uses that explicit path (e.g. "$HOME/secrets/azure-credentials"; a quoted ~ is not expanded by the shell).
