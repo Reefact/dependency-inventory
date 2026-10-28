@@ -115,6 +115,16 @@ h1 { font-size: 19px; font-weight: 700; margin: 0 0 28px; text-wrap: balance; }
   background: repeating-linear-gradient(135deg, var(--ending) 0 3px, transparent 3px 8px), var(--c);
   box-shadow: inset 0 0 0 1.5px var(--ending);
 }
+/* Usage: the solid start of the bar is used by the code, the rest is washed out (not used) or hatched grey
+   (undetermined), over the same color and stripes. */
+.seg { position: absolute; top: 0; bottom: 0; }
+.seg.unused { background: color-mix(in srgb, var(--band) 68%, transparent); }
+.seg.undetermined {
+  background: repeating-linear-gradient(45deg, var(--ink-3) 0 2px, transparent 2px 6px),
+    color-mix(in srgb, var(--band) 55%, transparent);
+}
+.seg:last-child { border-radius: 0 3px 3px 0; }
+.value.unused { color: var(--unsupported); font-weight: 600; }
 .bar:hover, .bar:focus-visible { filter: brightness(1.08); }
 .bar:focus-visible { box-shadow: 0 0 0 2px var(--ink); }
 .value {
@@ -137,6 +147,13 @@ h1 { font-size: 19px; font-weight: 700; margin: 0 0 28px; text-wrap: balance; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 0 0 14px; }
 .legend-item { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); max-width: 46ch; }
 .swatch { --c: var(--s-other); flex: none; width: 34px; height: 14px; border-radius: 0 3px 3px 0; background: var(--c); }
+.swatch.unused {
+  background: linear-gradient(color-mix(in srgb, var(--band) 68%, transparent) 0 0), var(--c);
+}
+.swatch.undetermined {
+  background: repeating-linear-gradient(45deg, var(--ink-3) 0 2px, transparent 2px 6px),
+    linear-gradient(color-mix(in srgb, var(--band) 55%, transparent) 0 0), var(--c);
+}
 .legend b { color: var(--ink); }
 .legend b.unsupported { color: var(--unsupported); }
 .legend b.ending { color: var(--ending); }
@@ -189,6 +206,8 @@ td.num { text-align: right; }
 const DATA = __CHART_DATA__;
 
 const T = DATA.text;
+// The text after each bar is longer with the usage ("21 · 5 used · 2 undetermined"): room is kept for it.
+if (DATA.usage) document.documentElement.style.setProperty("--value-w", "190px");
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -229,7 +248,7 @@ const hideTip = () => { tip.hidden = true; };
 
 const table = document.getElementById("table");
 const head = el("tr");
-T.tableColumns.forEach(c => head.appendChild(el("th", null, c)));
+(DATA.usage ? [...T.tableColumns, T.usageColumn] : T.tableColumns).forEach(c => head.appendChild(el("th", null, c)));
 table.appendChild(el("thead")).appendChild(head);
 const tbody = table.appendChild(el("tbody"));
 
@@ -259,13 +278,29 @@ DATA.packages.forEach(pkg => {
     const bar = el("div", "bar " + v.status);
     bar.style.width = pct(v.count);
     bar.tabIndex = 0;
-    const lines = [pkg.name, `${v.version} · ${v.frameworks.map(f => f.name).join(", ")}`, v.countLabel, ...v.notes];
+    if (DATA.usage) {
+      // Parts in this order from the start of the bar: used, undetermined, not used.
+      let start = 0;
+      [["used", v.used], ["undetermined", v.undetermined], ["unused", v.unused]].forEach(([kind, n]) => {
+        if (!n) return;
+        if (kind !== "used") {
+          const seg = el("span", "seg " + kind);
+          seg.style.left = (start / v.count * 100) + "%";
+          seg.style.width = (n / v.count * 100) + "%";
+          bar.appendChild(seg);
+        }
+        start += n;
+      });
+    }
+    const lines = [pkg.name, `${v.version} · ${v.frameworks.map(f => f.name).join(", ")}`,
+      DATA.usage ? `${v.countLabel}, ${v.usageLine}` : v.countLabel, ...v.notes];
     bar.setAttribute("aria-label", lines.join(", "));
     bar.addEventListener("mousemove", e => showTip(e, lines));
     bar.addEventListener("mouseleave", hideTip);
     bar.addEventListener("focus", e => showTip(e, lines));
     bar.addEventListener("blur", hideTip);
-    const value = el("span", "value", String(v.count));
+    const value = el("span", "value" + (DATA.usage && !v.used && !v.undetermined ? " unused" : ""),
+      DATA.usage ? v.valueLabel : String(v.count));
     value.style.left = pct(v.count);
     track.append(bar, value);
     row.append(label, track);
@@ -274,6 +309,7 @@ DATA.packages.forEach(pkg => {
     const tr = el("tr");
     [pkg.name, v.version, v.frameworks.map(f => f.name).join(", "), v.notes.join(" ; ")].forEach(t => tr.appendChild(el("td", null, t)));
     tr.appendChild(el("td", "num", String(v.count)));
+    if (DATA.usage) tr.appendChild(el("td", "num", String(v.used)));
     tbody.appendChild(tr);
   });
   chart.appendChild(section);
@@ -285,6 +321,16 @@ DATA.legend.forEach(item => {
   const text = el("span");
   text.append(el("b", item.status, item.title), document.createTextNode(T.colon + item.text));
   entry.append(el("span", "swatch " + item.status), text);
+  legend.appendChild(entry);
+});
+
+(DATA.usageLegend || []).forEach(item => {
+  const entry = el("div", "legend-item");
+  const text = el("span");
+  text.append(el("b", null, item.title), document.createTextNode(T.colon + item.text));
+  const swatch = el("span", "swatch " + item.usage);
+  swatch.style.setProperty("--c", "var(--s0)");
+  entry.append(swatch, text);
   legend.appendChild(entry);
 });
 

@@ -5,6 +5,8 @@ target frameworks and their support status on a given date.
 Inputs are two reports of depinv: dependencies.csv (depinv packages) has one line per reference declaration
 (not per project: a project file may declare a package twice under conditions, a shared .props file declares
 it for many projects), package-frameworks.csv (depinv feed) gives the frameworks each published version ships.
+When dependencies.csv has the Usage column (depinv 1.0.0-preview.5 and later), each bar also shows how many of
+its references the code actually uses.
 Support dates of .NET (Core) come from Microsoft's release metadata; .NET Framework dates from the
 table below. Output: a self-contained HTML page (and a PNG with scripts/render_png.js).
 """
@@ -63,6 +65,19 @@ TEXT = {
                                          "Versions in semantic order · Central version declarations excluded",
         "status_date": lambda d, months: f"Support status on {d}; orange when support ends within {months} months.",
         "unresolved": lambda n: f"{n} reference{'' if n == 1 else 's'} without a literal version not shown.",
+        "used": lambda n: f"{n} used",
+        "not_used": "not used",
+        "undetermined": lambda n: f"{n} undetermined",
+        "usage_line": lambda used, total: f"used by the code in {used} of {total}",
+        "legend_used": "Used by the code",
+        "legend_used_text": "solid part of the bar; a package acting on the build only (analyzer, build assets) counts as used",
+        "legend_unused": "Declared but not used",
+        "legend_unused_text": "faded part: the code references none of its types, the reference can likely be removed",
+        "legend_undetermined": "Usage undetermined",
+        "legend_undetermined_text": "hatched grey part: package not found, VB or F# project, code under #if...",
+        "usage_note": "A reference declared in a shared file (Directory.Build.props...) counts as used as soon as one "
+                      "of the projects it covers uses the package.",
+        "usageColumn": "Used",
     },
     "fr": {
         "axis": "Nombre de références directes à cette version",
@@ -87,6 +102,20 @@ TEXT = {
         "status_date": lambda d, months: f"Statut de prise en charge au {d} ; orange quand la prise en charge "
                                          f"s'arrête dans moins de {months} mois.",
         "unresolved": lambda n: f"{n} référence{'' if n == 1 else 's'} sans version littérale non affichée{'' if n == 1 else 's'}.",
+        "used": lambda n: f"{n} utilisée{'' if n == 1 else 's'}",
+        "not_used": "non utilisée",
+        "undetermined": lambda n: f"{n} indéterminée{'' if n == 1 else 's'}",
+        "usage_line": lambda used, total: f"utilisée par le code dans {used} sur {total}",
+        "legend_used": "Utilisée par le code",
+        "legend_used_text": "partie pleine de la barre ; un package qui n'agit que sur la compilation (analyseur, "
+                            "fichiers de build) compte comme utilisé",
+        "legend_unused": "Déclarée mais inutilisée",
+        "legend_unused_text": "partie pâle : le code n'utilise aucun de ses types, la référence peut sans doute être retirée",
+        "legend_undetermined": "Usage indéterminé",
+        "legend_undetermined_text": "partie grise hachurée : package introuvable, projet VB ou F#, code sous #if…",
+        "usage_note": "Une référence déclarée dans un fichier partagé (Directory.Build.props…) compte comme utilisée dès "
+                      "qu'un des projets qu'elle couvre utilise le package.",
+        "usageColumn": "Utilisées",
     },
 }
 
@@ -176,6 +205,26 @@ def framework_status(framework: str, eol: dict, today: dt.date, warn_until: dt.d
 SEVERITY = {"unsupported": 0, "ending": 1, "unknown": 2, "supported": 3}
 
 
+def usage_kind(value: str | None) -> str:
+    """The part of the bar a reference falls in. BuildOnly is used: such a package acts on the build without being
+    referenced by the code, it cannot be removed."""
+    return {"Used": "used", "BuildOnly": "used", "Unused": "unused"}.get((value or "").strip(), "undetermined")
+
+
+def usage_fields(counts: dict[str, int], total: int, text: dict) -> dict:
+    """The usage of one version's references: its parts, and the text after the bar, e.g. "21 · 5 used"."""
+    parts = [text["used"](counts["used"]) if counts["used"] or counts["undetermined"] else text["not_used"]]
+    if counts["undetermined"]:
+        parts.append(text["undetermined"](counts["undetermined"]))
+    return {
+        "used": counts["used"],
+        "unused": counts["unused"],
+        "undetermined": counts["undetermined"],
+        "valueLabel": " · ".join([str(total), *parts]),
+        "usageLine": text["usage_line"](counts["used"], text["references"](total)),
+    }
+
+
 def add_months(day: dt.date, months: int) -> dt.date:
     """The same day, months later; the last day of the month when that month is shorter."""
     month = day.month - 1 + months
@@ -210,9 +259,13 @@ def main() -> None:
 
     # One line of dependencies.csv is one reference declaration: that is what the chart counts.
     counts: dict[tuple[str, str], int] = defaultdict(int)
+    usage: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: {"used": 0, "unused": 0, "undetermined": 0})
     names: dict[str, str] = {}
     unresolved = 0
-    for row in read_csv(args.dependencies):
+    dependency_rows = read_csv(args.dependencies)
+    # Reports of depinv before 1.0.0-preview.5 have no Usage column: the chart then shows references only.
+    has_usage = bool(dependency_rows) and "Usage" in dependency_rows[0]
+    for row in dependency_rows:
         if row.get("Kind", "Reference") != "Reference" or not included(row["Package"]):
             continue
         version = (row.get("Version") or "").strip()
@@ -222,6 +275,7 @@ def main() -> None:
         names.setdefault(row["Package"].lower(), row["Package"])
         # 2.0 and 2.0.0 are the same version: counted together, shown in normalized form.
         counts[(row["Package"].lower(), normalize_version(version))] += 1
+        usage[(row["Package"].lower(), normalize_version(version))][usage_kind(row.get("Usage"))] += 1
 
     frameworks: dict[tuple[str, str], list[str]] = defaultdict(list)
     for row in read_csv(args.frameworks):
@@ -251,12 +305,16 @@ def main() -> None:
                 "version": version,
                 "count": count,
                 "countLabel": text["references"](count),
+                **(usage_fields(usage[(package, version)], count, text) if has_usage else {}),
                 "frameworks": [{"name": f, "status": s} for f, (s, _, _) in zip(shipped, statuses)],
                 "status": status if status in ("unsupported", "ending") else "",
                 "notes": sorted({n for _, n, _ in statuses if n}),
             })
         total = sum(c for _, c in versions)
-        packages.append({"name": names[package], "count": total, "countLabel": text["references"](total), "versions": rows})
+        label = text["references"](total)
+        if has_usage:
+            label += " · " + text["used"](sum(usage[(package, v)]["used"] for v, _ in versions))
+        packages.append({"name": names[package], "count": total, "countLabel": label, "versions": rows})
     for index, package in enumerate(packages):
         package["color"] = SERIES_COLORS[index] if index < len(SERIES_COLORS) else "--s-other"
 
@@ -283,9 +341,19 @@ def main() -> None:
         legend.append({"status": "", "title": text["legend_missing"],
                        "text": f"{text['missing']} — {text['references'](missing_refs)}"})
 
+    usage_legend = []
+    if has_usage:
+        usage_legend = [{"usage": "used", "title": text["legend_used"], "text": text["legend_used_text"]},
+                        {"usage": "unused", "title": text["legend_unused"], "text": text["legend_unused_text"]}]
+        if any(u["undetermined"] for u in usage.values()):
+            usage_legend.append({"usage": "undetermined", "title": text["legend_undetermined"],
+                                 "text": text["legend_undetermined_text"]})
+
     references = sum(counts.values())
     footer = [text["footer"](len(packages), references),
               text["status_date"](format_date(args.as_of, args.lang), args.warn_months)]
+    if has_usage:
+        footer.append(text["usage_note"])
     if unresolved:
         footer.append(text["unresolved"](unresolved))
 
@@ -295,6 +363,8 @@ def main() -> None:
         "text": {k: v for k, v in text.items() if isinstance(v, (str, list))},
         "packages": packages,
         "legend": legend,
+        "usage": has_usage,
+        "usageLegend": usage_legend,
         "footer": footer,
     }
     template = (Path(__file__).resolve().parent.parent / "assets" / "chart.html").read_text(encoding="utf-8")
@@ -307,6 +377,11 @@ def main() -> None:
     print(f"{args.output}: {len(packages)} packages, {references} references, support status on {args.as_of}")
     for item in legend:
         print(f"  {item['status'] or 'other':11} {item['title']}: {item['text']}")
+    if has_usage:
+        totals = {kind: sum(u[kind] for u in usage.values()) for kind in ("used", "unused", "undetermined")}
+        print(f"  usage       {totals['used']} used, {totals['unused']} not used, {totals['undetermined']} undetermined")
+    else:
+        print("  usage       no Usage column in dependencies.csv: run depinv 1.0.0-preview.5 or later to show it")
     if unresolved:
         print("  " + TEXT["en"]["unresolved"](unresolved))
 
