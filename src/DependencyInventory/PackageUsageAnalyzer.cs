@@ -214,7 +214,8 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
         int Failures,
         IReadOnlySet<string> Imports,
         IReadOnlySet<string> QualifiedUsings,
-        IReadOnlyList<string> Frameworks);
+        IReadOnlyList<string> Frameworks,
+        IReadOnlySet<string> ConditionalImports);
 
     private static bool IsCSharp(string projectFile) => projectFile.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase);
 
@@ -264,7 +265,10 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
                 imports.Namespaces.Concat(parsed.SelectMany(f => f.GlobalImports)).ToHashSet(StringComparer.Ordinal),
                 imports.QualifiedUsings.ToHashSet(StringComparer.Ordinal),
                 FrameworkParser.Resolve(project, declared).Where(f => f.Framework is not null)
-                    .Select(f => f.Framework!).ToArray());
+                    .Select(f => f.Framework!).ToArray(),
+                // A global using under #if may or may not apply to the other files of the project.
+                parsed.SelectMany(f => f.Conditional?.GlobalImports ?? new HashSet<string>())
+                    .ToHashSet(StringComparer.Ordinal));
         }
         return result;
     }
@@ -303,18 +307,20 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
             var conditional = new HashSet<string>(StringComparer.Ordinal);
             foreach (var file in project.Files)
             {
-                var used = UsedIn(file, project);
+                var used = UsedIn(file, project, false);
                 foreach (var type in used) counts[type] = counts.GetValueOrDefault(type) + 1;
-                // A conditional using may bring a certain name in scope, and the other way round.
-                if (file.Conditional is not null) conditional.UnionWith(UsedIn(file.WithConditional(), project));
+                // A conditional using, in this file or a global one in another, may bring a certain name in scope,
+                // and the other way round.
+                conditional.UnionWith(UsedIn(file.WithConditional(), project, true));
             }
             conditional.ExceptWith(counts.Keys);
             return (counts.Select(x => (x.Key, x.Value)).ToArray(), conditional);
         }
 
-        private HashSet<string> UsedIn(SourceSymbols file, ProjectSources project)
+        private HashSet<string> UsedIn(SourceSymbols file, ProjectSources project, bool withConditional)
         {
-            bool Imported(string ns) => ns.Length == 0 || file.Imports.Contains(ns) || project.Imports.Contains(ns);
+            bool Imported(string ns) => ns.Length == 0 || file.Imports.Contains(ns) || project.Imports.Contains(ns) ||
+                withConditional && project.ConditionalImports.Contains(ns);
             var used = new HashSet<string>(StringComparer.Ordinal);
             foreach (var name in file.Names)
             foreach (var type in _byName[name])
