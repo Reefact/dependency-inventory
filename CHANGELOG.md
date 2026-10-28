@@ -21,6 +21,13 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   2, and scans print it and ask for the credentials. `--credentials-file` remains available on macOS, for unattended
   runs.
 
+### Changed
+
+- **Breaking: the Project column is now Scope**, in `dependencies.csv`, `central-versions.csv`, `used-types.csv`,
+  `transitive-dependencies.csv`, `frameworks.csv` and `repositories.csv`, and so is the field in `report.json` and
+  `diagnostics.json`. It holds the Azure DevOps project or the GitLab group, and was easily mistaken for the .NET
+  project that ProjectType describes.
+
 ### Fixed
 
 - **The Published column of `packages.csv` is always in UTC.** A publication date read with another offset was

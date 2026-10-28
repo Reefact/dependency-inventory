@@ -286,7 +286,7 @@ public static class RepositoryScanner
         RepositoryDiagnostic? NewDiagnostic()
         {
             var created = diagnostic ?? (collectDiagnostics
-                ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
+                ? new RepositoryDiagnostic { Scope = repo.Project, Repository = repo.Name }
                 : null);
             diagnostic = null;
             return created;
@@ -493,7 +493,7 @@ public static class RepositoryScanner
             RepositoryDiagnostic? diagnostic, int fileParallelism, CancellationToken ct)
     {
         var undeclared = transitive.DistinctBy(TransitiveKey)
-            .Select(t => new PackageOccurrence(t.Project, t.Repository, t.Branch, t.Commit, t.File, t.Package,
+            .Select(t => new PackageOccurrence(t.Scope, t.Repository, t.Branch, t.Commit, t.File, t.Package,
                 $"[{t.Version}]", PackageKind.Reference, VersionSource.Explicit, t.MatchedFilters,
                 api.FileUrl(repo, branch.ObjectId, t.File)))
             .ToArray();

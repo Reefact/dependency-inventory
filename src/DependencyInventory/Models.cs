@@ -56,7 +56,7 @@ public sealed record ParsedPackage(string Id, string? Version, PackageKind Kind,
 public sealed record UsedType(string Type, int Files);
 
 public sealed record PackageOccurrence(
-    string Project,
+    string Scope,
     string Repository,
     string Branch,
     string Commit,
@@ -74,7 +74,7 @@ public sealed record PackageOccurrence(
     ProjectType? ProjectType = null);
 
 public sealed record RepositoryCoverage(
-    string Project,
+    string Scope,
     string Repository,
     string? Branch,
     CoverageStatus Status,
@@ -92,7 +92,7 @@ public enum DependencyResolution { LockFile, Computed }
 /// declared references (and, from a lock file, referenced projects) that bring it; they are not written to the reports.
 /// </summary>
 public sealed record TransitiveDependency(
-    string Project,
+    string Scope,
     string Repository,
     string Branch,
     string Commit,
@@ -121,7 +121,7 @@ public sealed record ScanReport(
 
 /// <summary>One target framework of one project file; no framework when it could not be resolved.</summary>
 public sealed record FrameworkOccurrence(
-    string Project,
+    string Scope,
     string Repository,
     string Branch,
     string Commit,
@@ -133,7 +133,7 @@ public sealed record FrameworkOccurrence(
 
 /// <summary>Coverage of one repository by the frameworks inventory.</summary>
 public sealed record ProjectCoverage(
-    string Project,
+    string Scope,
     string Repository,
     string? Branch,
     CoverageStatus Status,

@@ -126,7 +126,7 @@ public sealed class PackageUsageTests
     private static async Task<(IReadOnlyList<PackageOccurrence> References, RepositoryDiagnostic Diagnostic)> ScanAsync(
         FakeRepositoryProvider api, PackageCatalog catalog, bool usedTypes = true)
     {
-        var diagnostic = new RepositoryDiagnostic { Project = "project", Repository = "app" };
+        var diagnostic = new RepositoryDiagnostic { Scope = "project", Repository = "app" };
         var result = await RepositoryScanner.ScanRepositoryAsync(api, api.Repositories.Single(),
             DependencyMatcher.Create(["Contoso.*"], []), diagnostic, CancellationToken.None,
             usage: new PackageUsageAnalyzer(catalog, usedTypes));

@@ -35,7 +35,7 @@ public sealed class UsedTransitivelyTests
         Dictionary<string, string> files, string pattern = "*", bool transitive = true)
     {
         var api = new FakeRepositoryProvider().AddRepository("app", files: files);
-        var diagnostic = new RepositoryDiagnostic { Project = "project", Repository = "app" };
+        var diagnostic = new RepositoryDiagnostic { Scope = "project", Repository = "app" };
         var catalog = Catalog();
         var result = await RepositoryScanner.ScanRepositoryAsync(api, api.Repositories.Single(),
             DependencyMatcher.Create([pattern], []), diagnostic, CancellationToken.None,

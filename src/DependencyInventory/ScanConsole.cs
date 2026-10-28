@@ -111,9 +111,9 @@ public static class ScanConsole
 
     public static void FrameworkSummary(int analysed, FrameworkScanResult result, string reportDirectory)
     {
-        var projects = result.Frameworks.Select(x => (x.Project, x.Repository, x.ProjectFile)).Distinct().Count();
+        var projects = result.Frameworks.Select(x => (x.Scope, x.Repository, x.ProjectFile)).Distinct().Count();
         var unresolved = result.Frameworks.Where(x => x.FrameworkSource == FrameworkSource.Unresolved)
-            .Select(x => (x.Project, x.Repository, x.ProjectFile)).Distinct().Count();
+            .Select(x => (x.Scope, x.Repository, x.ProjectFile)).Distinct().Count();
 
         var summary = new Table().Border(TableBorder.Rounded)
             .AddColumn("Measure").AddColumn("Value")

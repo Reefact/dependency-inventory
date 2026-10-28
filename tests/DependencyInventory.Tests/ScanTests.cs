@@ -173,6 +173,8 @@ public sealed class ScanTests
             Assert.Contains("\"Kind\": \"CentralVersion\"", json);
             Assert.Contains("\"VersionSource\": \"Central\"", json);
             Assert.Contains("\"Status\": \"Partial\"", json);
+            Assert.Contains("\"Scope\": \"project\"", json);
+            Assert.DoesNotContain("\"Project\":", json);
         }
         finally
         {
@@ -203,14 +205,14 @@ public sealed class ScanTests
 
             Assert.Equal(
             [
-                "Project;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url;Usage;Source;Feed;ProjectType",
+                "Scope;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url;Usage;Source;Feed;ProjectType",
                 "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Reference;Explicit;Glob:Stime.*;https://example/web;Used;Feed;Shared/libs;Application"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "dependencies.csv")));
-            Assert.Equal("Project;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url",
+            Assert.Equal("Scope;Repository;Branch;Commit;File;Package;Version;Kind;VersionSource;MatchedFilters;Url",
                 (await File.ReadAllLinesAsync(Path.Combine(directory, "central-versions.csv")))[0]);
             Assert.Equal(
             [
-                "Project;Repository;Branch;Commit;File;Package;Version;Source;Type;Files",
+                "Scope;Repository;Branch;Commit;File;Package;Version;Source;Type;Files",
                 "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Feed;Stime.Web.Host;3"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "used-types.csv")));
 

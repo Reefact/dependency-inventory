@@ -147,6 +147,9 @@ The dependency-report folder (configurable with --output) contains:
   (see [Transitive dependencies](#-transitive-dependencies));
 - report.json: full JSON report, including the applied filters, the usage and the used types.
 
+In every report, Scope is the Azure DevOps project or the GitLab group (subgroup included) of the repository, not a
+.NET project.
+
 CSV files are UTF-8 with BOM and semicolon-separated.
 
 ## 🧩 Package usage
@@ -185,7 +188,7 @@ depinv packages --provider gitlab --url "https://gitlab.example.com/red/web" --p
   --credentials-file, the Azure credentials file). The PAT needs the Packaging (Read) scope.
 - nuget.org is read anonymously, unless --no-nuget-org is given; with --no-nuget-org, at least one --feed is required.
   Without --feed, internal packages end up Undetermined.
-- --used-types also writes used-types.csv: one line per type referenced, with Project, Repository, Branch, Commit,
+- --used-types also writes used-types.csv: one line per type referenced, with Scope, Repository, Branch, Commit,
   File, Package, Version and Source to join dependencies.csv, the full name of the Type, and Files, the number of C# files
   referencing it (0 for a type only named by a Using item of the project file).
 
@@ -236,7 +239,7 @@ depinv packages --provider azure --url "https://dev.azure.com/Organization/Proje
 ~~~
 
 Every declared reference takes part in the graph, whether it matches the filters or not; only the transitive packages
-matching them are written to transitive-dependencies.csv: Project, Repository, Branch, Commit, File (the project file),
+matching them are written to transitive-dependencies.csv: Scope, Repository, Branch, Commit, File (the project file),
 Framework, Package, Version, Via, Resolution, MatchedFilters, Usage, Source, Feed and ProjectType. dependencies.csv keeps the
 declared references only.
 

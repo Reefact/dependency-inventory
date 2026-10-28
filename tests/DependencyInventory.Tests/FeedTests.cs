@@ -213,7 +213,7 @@ public sealed class FeedTests
         try
         {
             await File.WriteAllTextAsync(path,
-                "Project;Repository;Package;Version;Kind\n" +
+                "Scope;Repository;Package;Version;Kind\n" +
                 "p;r;Stime.Core.Vnext.Messaging;2.0.4;Reference\n" +
                 "p;r;Stime.Core.Vnext.Caching;1.0.0-beta.25;Reference\n" +
                 "p;r;Stime.Core.Vnext.Hosting;;Reference\n" +
@@ -235,7 +235,7 @@ public sealed class FeedTests
         var path = Path.GetTempFileName();
         try
         {
-            await File.WriteAllTextAsync(path, "Project;Repository;Branch\np;r;main\n");
+            await File.WriteAllTextAsync(path, "Scope;Repository;Branch\np;r;main\n");
 
             await Assert.ThrowsAsync<FormatException>(() => VersionsFile.ReadAsync(path, CancellationToken.None));
         }

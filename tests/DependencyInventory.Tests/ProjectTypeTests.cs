@@ -140,7 +140,7 @@ public sealed class ProjectTypeTests
                 "<Project><PropertyGroup><ProjectTypeGuids>{349C5851-65DF-11DA-9384-00065B846F21}</ProjectTypeGuids></PropertyGroup></Project>",
             ["/legacy/Site/packages.config"] = """<packages><package id="Serilog" version="2.0.0" /></packages>"""
         });
-        var diagnostic = new RepositoryDiagnostic { Project = "project", Repository = "api" };
+        var diagnostic = new RepositoryDiagnostic { Scope = "project", Repository = "api" };
 
         var result = await RepositoryScanner.ScanRepositoryAsync(api, api.Repositories[0],
             DependencyMatcher.Create(["Serilog"], null), diagnostic, CancellationToken.None);
