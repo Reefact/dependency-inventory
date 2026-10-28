@@ -155,6 +155,53 @@ public sealed class TransitiveTests
     }
 
     [Fact]
+    public async Task ACentralVersionPinnedBelowWhatTheGraphAsksIsReported()
+    {
+        var (result, diagnostic) = await ScanAsync(new()
+        {
+            ["/Directory.Packages.props"] = """
+                <Project>
+                  <PropertyGroup>
+                    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+                  </PropertyGroup>
+                  <ItemGroup>
+                    <PackageVersion Include="A" Version="1.0.0" /><PackageVersion Include="E" Version="1.0.0" />
+                  </ItemGroup>
+                </Project>
+                """,
+            ["/App/App.csproj"] = Project("net8.0", "A")
+        });
+
+        Assert.Contains("net8.0 E 1.0.0 A > B > E Computed", Rows(result));
+        Assert.Contains("A > B > E: the central version 1.0.0 is pinned below the (>= 3.0.0) asked; " +
+            "NuGet refuses this restore (NU1109).", Assert.Single(diagnostic.Transitive).Unresolved);
+    }
+
+    [Theory]
+    [InlineData("<TargetFramework>$(TargetNet)</TargetFramework>",
+        "Target framework not resolved: the dependencies of every group of the packages are merged, so packages of " +
+        "a framework the project does not target may be listed.")]
+    [InlineData("<TargetFrameworks>net8.0;$(Extra)</TargetFrameworks>",
+        "Some target frameworks are not resolved (an MSBuild property): only those listed are computed.")]
+    public async Task AnUnresolvedTargetFrameworkIsReported(string frameworks, string note)
+    {
+        var (result, diagnostic) = await ScanAsync(new()
+        {
+            ["/App/App.csproj"] = $"""
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>{frameworks}</PropertyGroup>
+                  <ItemGroup><PackageReference Include="A" Version="1.0.0" /><PackageReference Include="D" Version="1.0.0" /></ItemGroup>
+                </Project>
+                """
+        });
+
+        Assert.Equal(note, Assert.Single(diagnostic.Transitive).Unresolved[0]);
+        // Without framework, the net462 group of A is merged with the net8.0 one.
+        Assert.Equal(frameworks.Contains("$(TargetNet)"),
+            result.TransitiveDependencies!.Any(t => t.Package == "Legacy"));
+    }
+
+    [Fact]
     public async Task AProjectCanDisableTheTransitivePinningItInherits()
     {
         var (result, _) = await ScanAsync(new()

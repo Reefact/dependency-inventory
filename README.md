@@ -243,7 +243,8 @@ declared references only.
 Only the .nuspec of each package is read, not the whole package, except for those matching the filters, whose usage
 is analyzed; both are cached. A branch that cannot be followed (a version found in no source, an MSBuild property)
 stops there; with --diagnostics, diagnostics.json gives it under Transitive, with the resolution of every project and
-framework.
+framework. It also reports a central version pinned below what the graph asks for, which NuGet refuses (NU1109), and a
+target framework that could not be resolved: the graph then merges the dependency groups of every framework.
 
 Accepted limits: a computed graph is right in the vast majority of cases, not always: MSBuild conditions, floating
 versions and packages missing from every source can make it differ from a real restore; Resolution says which lines

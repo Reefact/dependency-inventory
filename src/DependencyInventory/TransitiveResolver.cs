@@ -121,12 +121,20 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                 .ToDictionary(g => g.Key, g => g.First().Version!, StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        var frameworks = FrameworkParser.Resolve(project,
-                files.ToDictionary(f => f.Key, f => (DeclaredFrameworks?)f.Value.Frameworks, StringComparer.Ordinal))
-            .Select(f => f.Framework).Where(f => f is not null).Select(f => f!).ToArray();
+        var resolved = FrameworkParser.Resolve(project,
+            files.ToDictionary(f => f.Key, f => (DeclaredFrameworks?)f.Value.Frameworks, StringComparer.Ordinal));
+        var frameworks = resolved.Select(f => f.Framework).Where(f => f is not null).Select(f => f!).ToArray();
+        var notes = new List<string>();
+        if (note is not null) notes.Add(note);
+        // Without framework, the dependencies of every group are merged: packages of another framework may be listed.
+        if (frameworks.Length == 0)
+            notes.Add("Target framework not resolved: the dependencies of every group of the packages are merged, so " +
+                "packages of a framework the project does not target may be listed.");
+        else if (resolved.Any(f => f.Framework is null))
+            notes.Add("Some target frameworks are not resolved (an MSBuild property): only those listed are computed.");
         var graphs = new List<Graph>();
         foreach (var framework in frameworks.Length > 0 ? frameworks.Select(f => (string?)f) : [null])
-            graphs.Add(await ComputeAsync(framework, direct, pinned, note, ct));
+            graphs.Add(await ComputeAsync(framework, direct, pinned, notes, ct));
         return graphs;
     }
 
@@ -149,11 +157,11 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
     /// </summary>
     private async Task<Graph> ComputeAsync(string? framework,
         IReadOnlyList<(string Id, VersionRange? Range, string? Declared)> direct,
-        IReadOnlyDictionary<string, string> pinned, string? note, CancellationToken ct)
+        IReadOnlyDictionary<string, string> pinned, IReadOnlyList<string> notes, CancellationToken ct)
     {
         var frameworks = framework is null ? Array.Empty<string>() : [framework];
         var unresolved = new List<string>();
-        if (note is not null) unresolved.Add(note);
+        unresolved.AddRange(notes);
         var roots = new List<Node>();
         foreach (var (id, range, declared) in direct.DistinctBy(d => d.Id.ToLowerInvariant()))
         {
@@ -231,7 +239,7 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                 if (changed) unresolved.Add($"The graph did not settle in {MaxRounds} rounds.");
                 if (frontier.Count > 0) unresolved.Add($"The graph is cut at depth {MaxDepth}.");
                 var reached = new List<Reached>();
-                foreach (var (id, _, via) in asked.Values)
+                foreach (var (id, ranges, via) in asked.Values)
                 {
                     var (range, package) = chosen[id];
                     if (package.Version is null)
@@ -240,6 +248,11 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                         continue;
                     }
                     reached.Add(new Reached(id, package.Version, via));
+                    // A central version pinned below what the graph asks for is a downgrade NuGet refuses (NU1109).
+                    if (pinned.ContainsKey(id) && NuGetVersion.TryParse(package.Version, out var pinnedVersion) &&
+                        ranges.FirstOrDefault(r => !r.Satisfies(pinnedVersion)) is { } violated)
+                        unresolved.Add($"{via}: the central version {package.Version} is pinned below the " +
+                            $"{violated.PrettyPrint()} asked; NuGet refuses this restore (NU1109).");
                     if (package.Error is not null) unresolved.Add($"{via} {package.Version}: {package.Error}");
                 }
                 return new Graph(framework, DependencyResolution.Computed,
