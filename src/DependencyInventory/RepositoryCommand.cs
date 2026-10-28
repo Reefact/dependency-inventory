@@ -188,6 +188,8 @@ internal static class OriginCredentials
         try
         {
             var resolved = await resolve(store);
+            if (resolved.StoreUnavailable is not null)
+                ScanConsole.Warning(resolved.StoreUnavailable);
             if (resolved.Credentials is null)
             {
                 ScanConsole.Error(missing);
