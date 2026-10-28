@@ -79,7 +79,8 @@ TEXT = {
         "legend_undetermined_text": "hatched grey part: package not found, VB or F# project, code under #if...",
         "usage_note": "A reference declared in a shared file (Directory.Build.props...) counts as used as soon as one "
                       "of the projects it covers uses the package.",
-        "usageColumn": "Used",
+        "usageColumns": ["Used", "Not used", "Undetermined"],
+        "breakdown": lambda used, unused, undetermined: f"{used} used · {unused} not used · {undetermined} undetermined",
     },
     "fr": {
         "axis": "Nombre de références directes à cette version",
@@ -119,7 +120,10 @@ TEXT = {
         "legend_undetermined_text": "partie grise hachurée : package introuvable, projet VB ou F#, code sous #if…",
         "usage_note": "Une référence déclarée dans un fichier partagé (Directory.Build.props…) compte comme utilisée dès "
                       "qu'un des projets qu'elle couvre utilise le package.",
-        "usageColumn": "Utilisées",
+        "usageColumns": ["Utilisées", "Inutilisées", "Indéterminées"],
+        "breakdown": lambda used, unused, undetermined:
+            f"{used} utilisée{'' if used <= 1 else 's'} · {unused} inutilisée{'' if unused <= 1 else 's'} · "
+            f"{undetermined} indéterminée{'' if undetermined <= 1 else 's'}",
     },
 }
 
@@ -227,6 +231,7 @@ def usage_fields(counts: dict[str, int], total: int, text: dict) -> dict:
         "valueLabel": " · ".join([str(total), *parts]),
         "usageLabel": " · ".join(parts),
         "usageLine": text["usage_line"](counts["used"], total),
+        "breakdown": text["breakdown"](counts["used"], counts["unused"], counts["undetermined"]),
     }
 
 

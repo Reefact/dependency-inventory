@@ -259,7 +259,7 @@ const hideTip = () => { tip.hidden = true; };
 
 const table = document.getElementById("table");
 const head = el("tr");
-(DATA.usage ? [...T.tableColumns, T.usageColumn] : T.tableColumns).forEach(c => head.appendChild(el("th", null, c)));
+(DATA.usage ? [...T.tableColumns, ...T.usageColumns] : T.tableColumns).forEach(c => head.appendChild(el("th", null, c)));
 table.appendChild(el("thead")).appendChild(head);
 const tbody = table.appendChild(el("tbody"));
 
@@ -304,7 +304,8 @@ DATA.packages.forEach(pkg => {
       });
     }
     const lines = [pkg.name, `${v.version} · ${v.frameworks.map(f => f.name).join(", ")}`,
-      DATA.usage ? `${v.countLabel}, ${v.usageLine}` : v.countLabel, ...v.notes];
+      // The usage is told in words as well, the hatching alone does not tell undetermined from not used.
+      ...(DATA.usage ? [`${v.countLabel}, ${v.usageLine}`, v.breakdown] : [v.countLabel]), ...v.notes];
     bar.setAttribute("aria-label", lines.join(", "));
     bar.addEventListener("mousemove", e => showTip(e, lines));
     bar.addEventListener("mouseleave", hideTip);
@@ -324,7 +325,7 @@ DATA.packages.forEach(pkg => {
     const tr = el("tr");
     [pkg.name, v.version, v.frameworks.map(f => f.name).join(", "), v.notes.join(" ; ")].forEach(t => tr.appendChild(el("td", null, t)));
     tr.appendChild(el("td", "num", String(v.count)));
-    if (DATA.usage) tr.appendChild(el("td", "num", String(v.used)));
+    if (DATA.usage) [v.used, v.unused, v.undetermined].forEach(n => tr.appendChild(el("td", "num", String(n))));
     tbody.appendChild(tr);
   });
   chart.appendChild(section);

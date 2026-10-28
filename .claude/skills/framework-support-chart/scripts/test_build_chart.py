@@ -149,6 +149,9 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(versions["1.0.0"]["usageLabel"], "2 utilisées · 1 indéterminée")
         self.assertEqual(versions["1.0.0"]["usageLine"], "2 références considérées comme utilisées sur 4")
         self.assertEqual(versions["2.0.0"]["usageLine"], "0 référence considérée comme utilisée sur 1")
+        # Undetermined references are told apart from unused ones without the hatching.
+        self.assertEqual(versions["1.0.0"]["breakdown"], "2 utilisées · 1 inutilisée · 1 indéterminée")
+        self.assertEqual(data["text"]["usageColumns"], ["Utilisées", "Inutilisées", "Indéterminées"])
         self.assertEqual(data["packages"][0]["countLabel"], "5 références · 2 utilisées")
         self.assertEqual([item["usage"] for item in data["usageLegend"]], ["used", "unused", "undetermined"])
         self.assertTrue(data["usage"])
