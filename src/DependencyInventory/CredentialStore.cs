@@ -249,8 +249,26 @@ public sealed class SecretServiceStore : ICredentialStore
         List<string> arguments = ["store", $"--label=depinv {key}", KeyAttribute, key];
         if (credentials.Login.Length > 0) arguments.AddRange([LoginAttribute, credentials.Login]);
         Run(arguments, credentials.Pat);
-        if (previous is not null && previous.Login.Length > 0 && previous.Login != credentials.Login)
+        if (previous is null || previous.Login.Length == 0 || previous.Login == credentials.Login) return;
+
+        try
+        {
             Clear([KeyAttribute, key, LoginAttribute, previous.Login]);
+        }
+        catch (CredentialStoreUnavailableException) when (credentials.Login.Length > 0)
+        {
+            // Two entries would share the key and a scan could read either: the new one is removed, so the
+            // previous credentials stay the only ones, as when the store itself fails.
+            try
+            {
+                Clear([KeyAttribute, key, LoginAttribute, credentials.Login]);
+            }
+            catch (CredentialStoreUnavailableException)
+            {
+                // The first failure is the one reported.
+            }
+            throw;
+        }
     }
 
     public bool Delete(string key)

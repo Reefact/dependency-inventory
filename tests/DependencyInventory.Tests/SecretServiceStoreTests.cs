@@ -117,6 +117,28 @@ public sealed class SecretServiceStoreTests
     }
 
     [Fact]
+    public void AFailedDeletionOfThePreviousLoginRemovesTheNewEntry()
+    {
+        var calls = new List<string[]>();
+        SecretToolResult Run(IReadOnlyList<string> arguments, string? input)
+        {
+            calls.Add([.. arguments]);
+            return arguments[0] switch
+            {
+                "search" => new(0, "[/1]\nsecret = old-pat\n", "attribute.login = alice@company.com\n"),
+                "clear" when arguments.Contains("alice@company.com") =>
+                    new(1, "", "secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY\n"),
+                _ => new(0, "", "")
+            };
+        }
+
+        Assert.Throws<CredentialStoreUnavailableException>(() => new SecretServiceStore(Run)
+            .Write(Key, new RepositoryCredentials("bob@company.com", "new-pat")));
+        Assert.Equal(["search", "store", "clear", "clear"], calls.Select(c => c[0]));
+        Assert.Equal(["clear", "key", Key, "login", "bob@company.com"], calls[^1]);
+    }
+
+    [Fact]
     public void AFailedStoreKeepsThePreviousEntry()
     {
         var secretTool = new FakeSecretTool();
