@@ -7,7 +7,7 @@
 - Build: `dotnet build DependencyInventory.sln`
 - Test: `dotnet test DependencyInventory.sln`
 - The projects target `net10.0` (LTS).
-- CI (`.github/workflows/ci.yml`) builds and tests in Release on Ubuntu and Windows with the .NET 10 SDK.
+- CI (`.github/workflows/ci.yml`) builds and tests in Release on Ubuntu, Windows and macOS with the .NET 10 SDK.
 
 ## Repository map
 
