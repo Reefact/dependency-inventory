@@ -210,7 +210,8 @@ only through another package (the project calls Z, Z uses Y) is not used by the 
 The content of each package version is cached in the local application data folder (depinv/package-content), as a
 published version never changes; the next runs do not download it again. The NuGet global packages folder
 (NUGET_PACKAGES, or ~/.nuget/packages) is read before any download. Reading every C# file takes more requests than the
-project files only: --parallelism applies to them as well.
+project files only: --parallelism applies to them as well. The C# files are only read for the references whose
+package was found in a source: scanning internal packages without --feed reads none, their usage being undetermined.
 
 ## 🕸️ Transitive dependencies
 

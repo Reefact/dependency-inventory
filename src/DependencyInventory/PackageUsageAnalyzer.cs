@@ -83,8 +83,16 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
         var targets = occurrences.Where(o => o.Kind == PackageKind.Reference).Select(o => o.File)
             .Distinct(StringComparer.Ordinal)
             .ToDictionary(file => file, file => TargetProjects(file, projectFiles, files.Keys), StringComparer.Ordinal);
+        // The source files are only read for the references whose package could be read: an internal package
+        // found in no source (a scan without --feed) is undetermined whatever the code, so none is read for it.
+        var readable = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var occurrence in occurrences.Where(o => o.Kind == PackageKind.Reference))
+            if (!readable.Contains(occurrence.File) && ResolveRange(occurrence.Version) is { } range &&
+                (await catalog.ResolveAsync(occurrence.Package, range, ct)).Content is not null)
+                readable.Add(occurrence.File);
         var projects = await ReadProjectsAsync(api, repo, commit, tree, files, projectFiles,
-            targets.Values.SelectMany(t => t).Where(IsCSharp).ToHashSet(StringComparer.Ordinal), fileParallelism, ct);
+            targets.Where(t => readable.Contains(t.Key)).SelectMany(t => t.Value).Where(IsCSharp)
+                .ToHashSet(StringComparer.Ordinal), fileParallelism, ct);
 
         var analyzed = new List<PackageOccurrence>(occurrences.Count);
         foreach (var occurrence in occurrences)

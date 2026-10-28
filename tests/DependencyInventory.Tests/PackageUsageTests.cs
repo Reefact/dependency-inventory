@@ -291,6 +291,25 @@ public sealed class PackageUsageTests
         Assert.Equal(["Contoso.Core.New"], Assert.Single(references).UsedTypes!.Select(t => t.Type));
     }
 
+    [Theory]
+    [InlineData("Contoso.Messaging", true)]
+    [InlineData("Contoso.Missing", false)]
+    public async Task SourceFilesAreOnlyReadWhenThePackageCouldBeRead(string package, bool read)
+    {
+        // A scan without the feed of internal packages finds none of them: it reads no source file for nothing.
+        var (feedA, feedB, nugetOrg) = Feeds();
+        var api = new FakeRepositoryProvider().AddRepository("app", files: new Dictionary<string, string>
+        {
+            ["/Worker.csproj"] = Project("Microsoft.NET.Sdk", $"{package}@1.0.0"),
+            ["/Worker.cs"] = "using Contoso.Messaging; class Worker { Bus bus; }"
+        });
+
+        var (references, _) = await ScanAsync(api, Catalog(feedA, feedB, nugetOrg));
+
+        Assert.Equal(read, api.FilesRead.Contains("/Worker.cs"));
+        Assert.Equal(read ? PackageUsage.Used : PackageUsage.Undetermined, Assert.Single(references).Usage);
+    }
+
     [Fact]
     public async Task WithoutUsageAnalysisReferencesHaveNoUsage()
     {
