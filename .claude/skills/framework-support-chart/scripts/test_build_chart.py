@@ -107,5 +107,51 @@ class ChartTests(unittest.TestCase):
         self.assertIn("1 reference without a literal version not shown.", data["footer"])
 
 
+class UsageTests(unittest.TestCase):
+    def build(self, dependencies: str) -> dict:
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / "dependencies.csv").write_text(dependencies, encoding="utf-8-sig")
+            (folder / "package-frameworks.csv").write_text(
+                "Package;Version;Framework\nContoso.Core;1.0.0;netstandard2.0\n", encoding="utf-8-sig")
+            (folder / "eol.json").write_text("{}")
+            sys.argv = ["build_chart.py", "--dependencies", str(folder / "dependencies.csv"),
+                        "--frameworks", str(folder / "package-frameworks.csv"), "--title", "Chart",
+                        "--as-of", "2026-10-27", "--eol-file", str(folder / "eol.json"), "--lang", "fr",
+                        "--output", str(folder / "chart.html")]
+            with contextlib.redirect_stdout(io.StringIO()):
+                build_chart.main()
+            page = (folder / "chart.html").read_text(encoding="utf-8")
+            return json.loads(page.split("const DATA = ", 1)[1].split(";\n", 1)[0])
+
+    def test_each_version_shows_how_many_of_its_references_the_code_uses(self):
+        data = self.build(
+            "File;Package;Version;Kind;Usage\n"
+            "/A.csproj;Contoso.Core;1.0.0;Reference;Used\n"
+            "/B.csproj;Contoso.Core;1.0.0;Reference;BuildOnly\n"
+            "/C.csproj;Contoso.Core;1.0.0;Reference;Unused\n"
+            "/D.csproj;Contoso.Core;1.0.0;Reference;Undetermined\n"
+            "/E.csproj;Contoso.Core;2.0.0;Reference;Unused\n")
+
+        versions = {v["version"]: v for v in data["packages"][0]["versions"]}
+        # A package acting on the build only cannot be removed: it counts as used.
+        self.assertEqual((versions["1.0.0"]["used"], versions["1.0.0"]["unused"], versions["1.0.0"]["undetermined"]),
+                         (2, 1, 1))
+        self.assertEqual(versions["1.0.0"]["valueLabel"], "4 · 2 utilisées · 1 indéterminée")
+        self.assertEqual(versions["2.0.0"]["valueLabel"], "1 · non utilisée")
+        self.assertEqual(data["packages"][0]["countLabel"], "5 références · 2 utilisées")
+        self.assertEqual([item["usage"] for item in data["usageLegend"]], ["used", "unused", "undetermined"])
+        self.assertTrue(data["usage"])
+
+    def test_a_report_without_usage_column_shows_references_only(self):
+        data = self.build("File;Package;Version;Kind\n/A.csproj;Contoso.Core;1.0.0;Reference\n")
+
+        version = data["packages"][0]["versions"][0]
+        self.assertFalse(data["usage"])
+        self.assertNotIn("valueLabel", version)
+        self.assertEqual(data["packages"][0]["countLabel"], "1 référence")
+        self.assertEqual(data["usageLegend"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

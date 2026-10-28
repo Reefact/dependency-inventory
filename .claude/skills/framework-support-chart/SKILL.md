@@ -14,15 +14,22 @@ chart's wording on references. The label shows the version and its
 target framework, e.g. `2.0.1 (net9.0)`. Bars of a version whose framework is out of support are striped
 red; those whose support ends within a few months are striped orange; a legend gives the dates.
 
+When `dependencies.csv` has the `Usage` column (depinv 1.0.0-preview.5 and later), each bar also tells how many
+of its references the code actually uses: the solid start of the bar is used, the washed-out rest is declared
+but not used, a hatched grey part is undetermined, and the text after the bar reads `21 · 5 used`, or
+`not used` when none is. A `BuildOnly` reference (analyzer, build assets) counts as used. Without the column,
+the chart shows references only, as before.
+
 It reads two reports of `depinv` (this repository's tool) and needs nothing else, except Microsoft's
 public release metadata for the support dates.
 
 ## 1. Get the two reports
 
 - `dependencies.csv`: who uses which version. It comes from `depinv packages`, filtered on the packages to
-  chart:
+  chart. For the usage by the code, pass the feed that publishes them: without it, internal packages cannot be
+  read and their usage is `Undetermined`:
   ```
-  depinv packages --provider azure --url "https://dev.azure.com/<organization>/<project>" --pattern "<glob>"
+  depinv packages --provider azure --url "https://dev.azure.com/<organization>/<project>" --pattern "<glob>" --feed <feed>
   ```
 - `package-frameworks.csv`: the frameworks each published version ships. It comes from `depinv feed`, which
   reads the package feed; `--versions-from` limits it to the versions in use:
@@ -60,7 +67,9 @@ node <skill-dir>/scripts/render_png.js <dir>/chart.html <dir>/chart.png
 
 Write the outputs in the scratchpad, or wherever the user asks; they are not part of the repository.
 
-`build_chart.py` prints the packages, the reference count and one line per framework group. Its unit tests
+`build_chart.py` prints the packages, the reference count, one line per framework group and, with the usage,
+how many references are used, not used and undetermined. Many undetermined references usually mean the scan
+ran without `--feed`. Its unit tests
 run with `python3 -m unittest discover -s <skill-dir>/scripts`. Read it: the
 total should match the number of references the user expects, and each framework should have the status
 you expect from its dates. Then look once at the PNG for clipped labels or overlaps.
