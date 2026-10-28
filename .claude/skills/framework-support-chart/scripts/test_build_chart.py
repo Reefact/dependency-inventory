@@ -156,6 +156,15 @@ class UsageTests(unittest.TestCase):
         self.assertEqual([item["usage"] for item in data["usageLegend"]], ["used", "unused", "undetermined"])
         self.assertTrue(data["usage"])
 
+    def test_a_reference_used_transitively_counts_as_used(self):
+        data = self.build(
+            "File;Package;Version;Kind;Usage\n"
+            "/A.csproj;Contoso.Core;1.0.0;Reference;UsedTransitively\n"
+            "/B.csproj;Contoso.Core;1.0.0;Reference;Unused\n")
+
+        version = data["packages"][0]["versions"][0]
+        self.assertEqual((version["used"], version["unused"], version["undetermined"]), (1, 1, 0))
+
     def test_a_report_without_usage_column_shows_references_only(self):
         data = self.build("File;Package;Version;Kind\n/A.csproj;Contoso.Core;1.0.0;Reference\n")
 

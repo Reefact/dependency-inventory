@@ -399,6 +399,8 @@ public static class RepositoryScanner
             if (usage is not null)
                 (hits, transitiveDependencies) = await AnalyzeUsageAsync(usage, api, repo, branch, read.Tree,
                     msbuildFiles, found, transitiveDependencies, diagnostic, fileParallelism, ct);
+            if (usage is not null && transitive is not null)
+                hits = MarkUsedTransitively(hits, transitiveDependencies, msbuildFiles, diagnostic);
             (hits, transitiveDependencies) = Classify(read, hits, transitiveDependencies, diagnostic);
             var status = failures.Count > 0 ? CoverageStatus.Partial
                 : read.Files.Count == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;
@@ -412,6 +414,43 @@ public static class RepositoryScanner
             return new(new(repo.Project, repo.Name, branchName, CoverageStatus.Failed, filesRead, 0, ex.Message), hits,
                 transitiveDependencies);
         }
+    }
+
+    /// <summary>
+    /// A reference whose types the code does not use, but which brings a package the code uses, is UsedTransitively:
+    /// removing it would break the code. The packages it brings are those of the transitive dependencies reported,
+    /// whose path starts with it, in one of the projects the reference applies to.
+    /// </summary>
+    private static IReadOnlyList<PackageOccurrence> MarkUsedTransitively(IReadOnlyList<PackageOccurrence> hits,
+        IReadOnlyList<TransitiveDependency> transitive, IReadOnlyDictionary<string, MsBuildFile> files,
+        RepositoryDiagnostic? diagnostic)
+    {
+        var used = transitive.Where(t => t.Usage == PackageUsage.Used).ToArray();
+        if (used.Length == 0) return hits;
+        var projectFiles = files.Keys.Where(NuGetDependencyParser.IsProjectFile).Order(StringComparer.Ordinal).ToArray();
+        return hits.Select(hit =>
+        {
+            if (hit.Kind != PackageKind.Reference || hit.Usage != PackageUsage.Unused) return hit;
+            var projects = PackageUsageAnalyzer.TargetProjects(hit.File, projectFiles, files.Keys)
+                .ToHashSet(StringComparer.Ordinal);
+            var brought = used.Where(t => projects.Contains(t.File) &&
+                    t.Via.Split('>')[0].Trim().Equals(hit.Package, StringComparison.OrdinalIgnoreCase))
+                .Select(t => t.Package).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal)
+                .ToArray();
+            if (brought.Length == 0) return hit;
+            if (diagnostic is not null)
+            {
+                var index = diagnostic.Usages.FindIndex(u => u.File == hit.File &&
+                    u.Package.Equals(hit.Package, StringComparison.OrdinalIgnoreCase) && u.Version == hit.Version);
+                if (index >= 0)
+                    diagnostic.Usages[index] = diagnostic.Usages[index] with
+                    {
+                        Usage = PackageUsage.UsedTransitively,
+                        Reason = $"No type of its own is used, but it brings {string.Join(", ", brought)}, which the code uses."
+                    };
+            }
+            return hit with { Usage = PackageUsage.UsedTransitively };
+        }).ToArray();
     }
 
     /// <summary>

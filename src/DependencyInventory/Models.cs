@@ -42,7 +42,7 @@ public enum CoverageStatus { OK, Partial, Failed, NoBranch, Disabled, NoNuGetFil
 public enum FrameworkSource { Project, DirectoryBuildProps, Unresolved }
 
 [JsonConverter(typeof(JsonStringEnumConverter<PackageUsage>))]
-public enum PackageUsage { Used, Unused, BuildOnly, Undetermined }
+public enum PackageUsage { Used, Unused, BuildOnly, Undetermined, UsedTransitively }
 
 [JsonConverter(typeof(JsonStringEnumConverter<PackageSource>))]
 public enum PackageSource { Feed, NuGetOrg }

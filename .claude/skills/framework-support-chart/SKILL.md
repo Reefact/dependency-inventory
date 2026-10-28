@@ -15,8 +15,9 @@ target framework, e.g. `2.0.1 (net9.0)`. Bars of a version whose framework is ou
 red; those whose support ends within a few months are striped orange; a legend gives the dates.
 
 When `dependencies.csv` has the `Usage` column (depinv 1.0.0-preview.5 and later), each bar also tells how many
-of its references are classified as used: those whose package's types the code references, and the `BuildOnly`
-ones (analyzers, build assets), which act on the build without any type in the code. The solid start of the bar
+of its references are classified as used: those whose package's types the code references, the `BuildOnly`
+ones (analyzers, build assets), which act on the build without any type in the code, and the `UsedTransitively`
+ones (depinv 1.0.0-preview.8 and later), which bring a package the code uses. The solid start of the bar
 is classified as used, the washed-out rest is declared but not used, a hatched grey part is undetermined, and the
 text after the bar reads `21 · 5 used`, or `not used` when none is. Without the column, the chart shows
 references only, as before.
