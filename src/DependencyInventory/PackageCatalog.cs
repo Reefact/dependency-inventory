@@ -28,13 +28,15 @@ public sealed class PackageSourceEntry(IPackageFeed feed, PackageSource kind, st
     /// saved from an upstream source), not those it could fetch from an upstream source: reading those would save
     /// them to the feed. Each package is asked once.
     /// </summary>
-    public async Task<PackagePublication?> FindAsync(string id, NuGetVersion version, CancellationToken ct)
-    {
-        var versions = await _versions.GetOrAdd(id, _ => new(() => ListAsync(id, ct))).Value;
-        return versions.FirstOrDefault(v => NuGetVersion.TryParse(v.Version, out var listed) && listed == version);
-    }
+    public async Task<PackagePublication?> FindAsync(string id, NuGetVersion version, CancellationToken ct) =>
+        (await ListAsync(id, ct))
+            .FirstOrDefault(v => NuGetVersion.TryParse(v.Version, out var listed) && listed == version);
 
-    private async Task<IReadOnlyList<PackagePublication>> ListAsync(string id, CancellationToken ct) =>
+    /// <summary>The versions of a package this source holds; empty when it does not know the package.</summary>
+    public Task<IReadOnlyList<PackagePublication>> ListAsync(string id, CancellationToken ct) =>
+        _versions.GetOrAdd(id, _ => new(() => ReadVersionsAsync(id, ct))).Value;
+
+    private async Task<IReadOnlyList<PackagePublication>> ReadVersionsAsync(string id, CancellationToken ct) =>
         kind == PackageSource.Feed
             ? await feed.GetPublicationsAsync(id, ct)
             : (await feed.GetVersionsAsync(id, ct) ?? []).Select(v => new PackagePublication(v, null, null, [])).ToArray();
@@ -43,10 +45,12 @@ public sealed class PackageSourceEntry(IPackageFeed feed, PackageSource kind, st
 }
 
 /// <summary>
-/// Where a package version was found, and what it exposes. No content when it could not be read: the error says why.
-/// <see cref="ReadFrom"/> says where the content came from: the local cache, the global packages folder or a source.
+/// Which version of a package was read, where it was found, and what it exposes. No content when it could not be read:
+/// the error says why. <see cref="ReadFrom"/> says where the content came from: the local cache, the global packages
+/// folder or a source.
 /// </summary>
 public sealed record PackageResolution(
+    string? Version,
     PackageContent? Content,
     PackageSource? Source,
     string? Feed,
@@ -99,6 +103,43 @@ public sealed class PackageCatalog
         return Directory.Exists(folder) ? folder : null;
     }
 
+    /// <summary>
+    /// The version NuGet restores for a range: the lowest one the sources hold that satisfies it (the highest
+    /// matching one for a floating range), prereleases only when the range's minimum is one. A declared version such
+    /// as 1.2.3 is the range [1.2.3, ): when 1.2.3 is not published, NuGet restores the next one.
+    /// </summary>
+    public async Task<PackageResolution> ResolveAsync(string id, VersionRange range, CancellationToken ct)
+    {
+        var versions = new List<NuGetVersion>();
+        var errors = new List<string>();
+        foreach (var source in _sources)
+        {
+            try
+            {
+                versions.AddRange((await source.ListAsync(id, ct))
+                    .Select(v => NuGetVersion.TryParse(v.Version, out var parsed) ? parsed : null)
+                    .Where(v => v is not null).Select(v => v!));
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { errors.Add(Failure(source, ex)); }
+        }
+        var allowPrerelease = range.MinVersion?.IsPrerelease == true || range.Float?.IncludePrerelease == true;
+        if (range.FindBestMatch(versions.Where(v => allowPrerelease || !v.IsPrerelease)) is { } best)
+            return await ResolveAsync(id, best, ct);
+
+        var searched = string.Join(", ", _sources.Select(s => s.Description));
+        var message = $"No version satisfying {range.PrettyPrint()} in {searched}";
+        return new PackageResolution(null, null, null, null, null,
+            errors.Count > 0 ? $"{message} ({string.Join("; ", errors)})" : message);
+    }
+
+    private string Failure(PackageSourceEntry source, Exception ex)
+    {
+        var error = $"{source.Description}: {ex.Message}";
+        _sourceFailures.TryAdd(error, 0);
+        return error;
+    }
+
     public Task<PackageResolution> ResolveAsync(string id, NuGetVersion version, CancellationToken ct) =>
         _resolutions.GetOrAdd($"{id.ToLowerInvariant()}/{version.ToNormalizedString().ToLowerInvariant()}",
             _ => new(() => ReadAsync(id, version, ct))).Value;
@@ -113,9 +154,7 @@ public sealed class PackageCatalog
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
-                var error = $"{source.Description}: {ex.Message}";
-                _sourceFailures.TryAdd(error, 0);
-                errors.Add(error);
+                errors.Add(Failure(source, ex));
                 continue;
             }
             if (found is null) continue;
@@ -127,17 +166,17 @@ public sealed class PackageCatalog
             try
             {
                 var (content, readFrom) = await ReadContentAsync(source, id, version, ct);
-                return new PackageResolution(content, kind, feed, readFrom, null);
+                return new PackageResolution(version.ToNormalizedString(), content, kind, feed, readFrom, null);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
-                return new PackageResolution(null, kind, feed, source.Feed.Origin,
+                return new PackageResolution(version.ToNormalizedString(), null, kind, feed, source.Feed.Origin,
                     $"Cannot read the package from {source.Description}: {ex.Message}");
             }
         }
         var searched = string.Join(", ", _sources.Select(s => s.Description));
-        return new PackageResolution(null, null, null, null, errors.Count > 0
+        return new PackageResolution(version.ToNormalizedString(), null, null, null, null, errors.Count > 0
             ? $"Not found in {searched} ({string.Join("; ", errors)})"
             : $"Not found in {searched}");
     }

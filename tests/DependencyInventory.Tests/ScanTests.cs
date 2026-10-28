@@ -208,7 +208,7 @@ public sealed class ScanTests
     }
 
     [Fact]
-    public async Task UsageColumnsAreAppendedToDependenciesOnlyAndUsedTypesAreWrittenOnRequest()
+    public async Task UsageColumnsAreAppendedToDependenciesOnlyAndUsedTypesAreOnlyWrittenOnRequest()
     {
         PackageOccurrence Occurrence(PackageKind kind, string file) =>
             new("project", "api", "main", "abc", file, "Stime.Web", "2.0.0", kind, VersionSource.Explicit,
@@ -239,6 +239,10 @@ public sealed class ScanTests
                 "Project;Repository;File;Package;Version;Source;Type;Files",
                 "project;api;/src/Api.csproj;Stime.Web;2.0.0;Feed;Stime.Web.Host;3"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "used-types.csv")));
+
+            // A later run without --used-types in the same folder leaves no stale file behind.
+            await ReportWriter.SaveAsync(report, directory, false, CancellationToken.None);
+            Assert.False(File.Exists(Path.Combine(directory, "used-types.csv")));
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
             Assert.Contains("\"Usage\": \"Used\"", json);
             Assert.Contains("\"Source\": \"Feed\"", json);

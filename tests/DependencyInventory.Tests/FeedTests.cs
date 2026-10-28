@@ -598,9 +598,30 @@ public sealed class FeedTests
     }
 
     [Fact]
+    public async Task TheClientPagesThroughTheSearchUntilThePackageNamedExactly()
+    {
+        // 1000 packages whose name contains the id come first: the package itself is on the second page.
+        const string api = "https://feeds.dev.azure.com/acme/_apis/packaging/Feeds/feed/packages?protocolType=NuGet&packageNameQuery=Core&includeAllVersions=true";
+        var others = string.Join(",", Enumerable.Range(0, AzureArtifactsFeed.PageSize)
+            .Select(i => $$"""{"name":"Core.Extension{{i}}","versions":[{"normalizedVersion":"1.0.0"}]}"""));
+        var responses = new Dictionary<string, (HttpStatusCode, string)>();
+        foreach (var filters in new[] { "", "&isListed=false", "&isRelease=false", "&isRelease=false&isListed=false" })
+        {
+            responses[$"{api}&%24top=1000&%24skip=0{filters}&api-version=7.1"] = Ok($$"""{"value":[{{others}}]}""");
+            responses[$"{api}&%24top=1000&%24skip=1000{filters}&api-version=7.1"] =
+                Ok("""{"value":[{"name":"Core","versions":[{"normalizedVersion":"2.0.0","isListed":true}]}]}""");
+        }
+        var (feed, _) = Client(responses);
+        using (feed)
+        {
+            Assert.Equal(["2.0.0"], (await feed.GetPublicationsAsync("Core", default)).Select(p => p.Version));
+        }
+    }
+
+    [Fact]
     public async Task TheClientReadsThePublicationsOfThePackageNamedExactly()
     {
-        const string api = "https://feeds.dev.azure.com/acme/_apis/packaging/Feeds/feed/packages?protocolType=NuGet&packageNameQuery=Stime.Core.Vnext.Messaging&includeAllVersions=true";
+        const string api = "https://feeds.dev.azure.com/acme/_apis/packaging/Feeds/feed/packages?protocolType=NuGet&packageNameQuery=Stime.Core.Vnext.Messaging&includeAllVersions=true&%24top=1000&%24skip=0";
         var (feed, server) = Client(new()
         {
             // Prereleases and delisted versions are only returned by the filtered requests.

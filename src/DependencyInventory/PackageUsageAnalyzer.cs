@@ -18,6 +18,7 @@ public sealed record UsageDiagnostic(
     string File,
     string Package,
     string? Version,
+    string? ResolvedVersion,
     PackageUsage Usage,
     PackageSource? Source,
     string? Feed,
@@ -61,7 +62,7 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
             return occurrences.Select(o =>
             {
                 if (o.Kind != PackageKind.Reference) return o;
-                diagnostic?.Usages.Add(new UsageDiagnostic(o.File, o.Package, o.Version, PackageUsage.Undetermined,
+                diagnostic?.Usages.Add(new UsageDiagnostic(o.File, o.Package, o.Version, null, PackageUsage.Undetermined,
                     null, null, null, [], 0, reason));
                 return o with { Usage = PackageUsage.Undetermined, UsedTypes = listUsedTypes ? [] : null };
             }).ToArray();
@@ -97,7 +98,7 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
                 UsedTypes = listUsedTypes ? result.Types : null
             });
             diagnostic?.Usages.Add(new UsageDiagnostic(occurrence.File, occurrence.Package, occurrence.Version,
-                result.Usage, details.Source, details.Feed, details.ReadFrom, targets[occurrence.File],
+                details.Version, result.Usage, details.Source, details.Feed, details.ReadFrom, targets[occurrence.File],
                 targets[occurrence.File].Where(projects.ContainsKey).Sum(p => projects[p].Files.Count), result.Reason));
         }
         return analyzed;
@@ -110,13 +111,13 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
     private async Task<(UsageResult Result, PackageResolution Details)> AnalyzeAsync(PackageOccurrence occurrence,
         IReadOnlyList<string> targets, IReadOnlyDictionary<string, ProjectSources> projects, CancellationToken ct)
     {
-        var none = new PackageResolution(null, null, null, null, null);
-        if (ResolveVersion(occurrence.Version) is not { } version)
+        var none = new PackageResolution(null, null, null, null, null, null);
+        if (ResolveRange(occurrence.Version) is not { } range)
             return (Undetermined(occurrence.Version is null
                 ? "The version is not resolved."
-                : $"The version '{occurrence.Version}' is neither a version nor a range with a minimum version."), none);
+                : $"The version '{occurrence.Version}' is neither a version nor a version range."), none);
 
-        var resolution = await catalog.ResolveAsync(occurrence.Package, version, ct);
+        var resolution = await catalog.ResolveAsync(occurrence.Package, range, ct);
         if (resolution.Content is not { } content) return (Undetermined(resolution.Error ?? "Package not read."), resolution);
         if (targets.Count == 0) return (Undetermined("No project file in this file's folder."), resolution);
 
@@ -146,16 +147,12 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
     }
 
     /// <summary>
-    /// A literal version, or the minimum of a range, which NuGet restores when it exists; null for anything else
-    /// (a floating version, an MSBuild property, a range without inclusive minimum).
+    /// The range a declared version stands for, as NuGet reads it: 1.2.3 is [1.2.3, ), and ranges and floating versions
+    /// (1.*) are kept. Null for anything else, such as an MSBuild property.
     /// </summary>
-    public static NuGetVersion? ResolveVersion(string? version)
-    {
-        if (string.IsNullOrWhiteSpace(version)) return null;
-        if (NuGetVersion.TryParse(version.Trim(), out var literal)) return literal;
-        return VersionRange.TryParse(version.Trim(), out var range) && !range.IsFloating &&
-            range is { HasLowerBound: true, IsMinInclusive: true } ? range.MinVersion : null;
-    }
+    public static VersionRange? ResolveRange(string? version) =>
+        !string.IsNullOrWhiteSpace(version) && VersionRange.TryParse(version.Trim(), allowFloating: true, out var range)
+            ? range : null;
 
     private sealed record Surface(TypeIndex Index, IReadOnlyList<string> Errors);
 
@@ -173,11 +170,11 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
         var errors = new List<string>();
         foreach (var dependency in Dependencies(content, frameworks))
         {
-            if (dependency.VersionRange is null || ResolveVersion(dependency.VersionRange) is not { } version) continue;
-            var resolution = await catalog.ResolveAsync(dependency.Id, version, ct);
+            if (dependency.VersionRange is null || ResolveRange(dependency.VersionRange) is not { } range) continue;
+            var resolution = await catalog.ResolveAsync(dependency.Id, range, ct);
             if (resolution.Content is not { } dependencyContent)
             {
-                errors.Add($"{dependency.Id} {version}: {resolution.Error}");
+                errors.Add($"{dependency.Id} {range.PrettyPrint()}: {resolution.Error}");
                 continue;
             }
             var surface = await SurfaceAsync(dependencyContent, frameworks, depth + 1, ct);
@@ -203,7 +200,7 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
     }
 
     private static (string, string?) DependencyKey(NuspecDependency dependency) =>
-        (dependency.Id.ToLowerInvariant(), ResolveVersion(dependency.VersionRange)?.ToNormalizedString());
+        (dependency.Id.ToLowerInvariant(), ResolveRange(dependency.VersionRange)?.ToNormalizedString());
 
     // --- Projects and their source files
 

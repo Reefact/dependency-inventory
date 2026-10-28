@@ -96,7 +96,7 @@ public sealed record AzureFeed(string Organization, string? Project, string Name
 /// <summary>An Azure Artifacts feed, read through its NuGet v3 API and the Azure DevOps feed API. GET only.</summary>
 public sealed class AzureArtifactsFeed : IPackageFeed
 {
-    private const int PageSize = 1000;
+    public const int PageSize = 1000;
 
     // The feed API returns release (isRelease defaults to true) and listed versions only, unless told otherwise.
     private static readonly string[] PublicationFilters =
@@ -164,12 +164,21 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     private async Task<IReadOnlyList<PackagePublication>> GetPublicationsAsync(string id, string filters,
         CancellationToken ct)
     {
-        // packageNameQuery matches names containing the id: the package itself is the one named exactly so.
-        using var document = await ReadJsonAsync($"{_feed.PackagesApiUrl}?protocolType=NuGet" +
-            $"&packageNameQuery={Uri.EscapeDataString(id)}&includeAllVersions=true{filters}&api-version=7.1", ct);
-        var package = document?.RootElement.GetProperty("value").EnumerateArray()
-            .FirstOrDefault(p => p.TryGetProperty("name", out var name) &&
-                string.Equals(name.GetString(), id, StringComparison.OrdinalIgnoreCase));
+        // packageNameQuery matches names containing the id: the package itself is the one named exactly so, and
+        // may be on any page when many names contain the id.
+        JsonElement? package = null;
+        for (var skip = 0; package is null; skip += PageSize)
+        {
+            using var document = await ReadJsonAsync($"{_feed.PackagesApiUrl}?protocolType=NuGet" +
+                $"&packageNameQuery={Uri.EscapeDataString(id)}&includeAllVersions=true" +
+                $"&%24top={PageSize}&%24skip={skip}{filters}&api-version=7.1", ct);
+            if (document is null) return [];
+            var page = document.RootElement.GetProperty("value").EnumerateArray().ToArray();
+            package = page.Where(p => p.TryGetProperty("name", out var name) &&
+                    string.Equals(name.GetString(), id, StringComparison.OrdinalIgnoreCase))
+                .Select(p => (JsonElement?)p.Clone()).FirstOrDefault();
+            if (page.Length < PageSize) break;
+        }
         if (package is not { ValueKind: JsonValueKind.Object } found ||
             !found.TryGetProperty("versions", out var versions))
             return [];

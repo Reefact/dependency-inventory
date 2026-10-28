@@ -194,7 +194,9 @@ How the usage is decided:
   under its folder.
 - A package without assemblies of its own, such as xunit, brings the types of its dependencies, for the target
   frameworks of the project.
-- The version read is the one declared, or the minimum of a range.
+- The version read is the one NuGet restores: the lowest version published in the sources that satisfies the declared
+  one (1.2.3 means 1.2.3 or later) or range, the highest one for a floating version (1.*); diagnostics.json gives it as
+  ResolvedVersion.
 
 Accepted limits: there is no semantic model. A package used only through reflection, configuration (such as Serilog
 sinks declared in appsettings.json) or dependency injection by convention can be reported Unused, and a package used
