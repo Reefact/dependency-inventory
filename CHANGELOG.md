@@ -14,12 +14,17 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   project file and the nearest `Directory.Build.props` (OutputType, SDK, IsTestProject, AzureFunctionsVersion, test
   framework references, legacy ProjectTypeGuids, sample folders). It tells applications apart from libraries, tests
   and samples in the inventory. With `--diagnostics`, `diagnostics.json` gives the rule that classified each project.
+- **`repositories.csv` gives the date of every scanned commit**, in a new CommitDate column (committer date, ISO 8601
+  UTC), in `depinv packages` and `depinv frameworks`, to tell active repositories from abandoned ones. It costs one
+  request per scanned commit; a date that cannot be read stays empty and `Details` says why.
 
 ### Changed
 
 - **`dependencies.csv`, `transitive-dependencies.csv` and `frameworks.csv` gain a ProjectType column**, appended
   last; `report.json` gains the same field. A reference declared in a file shared by several projects, such as
   `Directory.Build.props`, has none.
+- **`repositories.csv` gains the CommitDate column**, appended last, in both inventories; `report.json` and
+  `diagnostics.json` gain the same field.
 
 ## [1.0.0-preview.7] - 2026-10-28
 

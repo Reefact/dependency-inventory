@@ -33,9 +33,9 @@ public static class ReportWriter
         await WriteCsvAsync(Path.Combine(absolute, "central-versions.csv"), columns,
             report.Occurrences.Where(x => x.Kind == PackageKind.CentralVersion).Select(ToColumns), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
-            ["Project", "Repository", "Branch", "Status", "FilesExamined", "References", "Details"],
+            ["Project", "Repository", "Branch", "Status", "FilesExamined", "References", "Details", "CommitDate"],
             report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
-                x.FilesExamined.ToString(), x.References.ToString(), x.Details ?? "" }), ct);
+                x.FilesExamined.ToString(), x.References.ToString(), x.Details ?? "", Date(x.CommitDate) }), ct);
         // Without --used-types, the file of a previous run in the same folder would look like part of this report.
         var usedTypesFile = Path.Combine(absolute, "used-types.csv");
         if (!usedTypes) File.Delete(usedTypesFile);
@@ -75,9 +75,9 @@ public static class ReportWriter
             report.Frameworks.Select(x => new[] { x.Project, x.Repository, x.Branch, x.Commit, x.ProjectFile,
                 x.Framework ?? "", x.FrameworkSource.ToString(), x.Url, x.ProjectType?.ToString() ?? "" }), ct);
         await WriteCsvAsync(Path.Combine(absolute, "repositories.csv"),
-            ["Project", "Repository", "Branch", "Status", "FilesExamined", "Projects", "Details"],
+            ["Project", "Repository", "Branch", "Status", "FilesExamined", "Projects", "Details", "CommitDate"],
             report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
-                x.FilesExamined.ToString(), x.Projects.ToString(), x.Details ?? "" }), ct);
+                x.FilesExamined.ToString(), x.Projects.ToString(), x.Details ?? "", Date(x.CommitDate) }), ct);
         return absolute;
     }
 
@@ -130,6 +130,11 @@ public static class ReportWriter
             m?.Serviceable ?? "", m?.MinClientVersion ?? "", m?.PackageTypes ?? "", m?.RepositoryType ?? "",
             m?.RepositoryUrl ?? "", m?.RepositoryBranch ?? "", m?.RepositoryCommit ?? ""];
     }
+
+    // ISO 8601 in UTC, to the second: 2026-10-28T09:42:56Z.
+    private static string Date(DateTimeOffset? date) =>
+        date?.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
+        ?? "";
 
     private static string[] ToColumns(PackageOccurrence x) =>
         [x.Project, x.Repository, x.Branch, x.Commit, x.File,

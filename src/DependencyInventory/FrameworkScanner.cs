@@ -102,8 +102,16 @@ public static class FrameworkScanner
                         branchDiagnostic.SelectedBranch = branch.Name;
                         branchDiagnostic.Commit = branch.ObjectId;
                     }
-                    return (await ScanCommitAsync(reader, repo, branch, branchDiagnostic, ct, fileParallelism),
-                        branchDiagnostic);
+                    var (date, dateError) = await RepositoryWalker.CommitDateAsync(reader, repo, branch, ct);
+                    if (branchDiagnostic is not null) branchDiagnostic.CommitDate = date;
+                    var scan = await ScanCommitAsync(reader, repo, branch, branchDiagnostic, ct, fileParallelism);
+                    return (scan with
+                    {
+                        Coverage = scan.Coverage with
+                        {
+                            CommitDate = date, Details = RepositoryWalker.AddDetail(scan.Coverage.Details, dateError)
+                        }
+                    }, branchDiagnostic);
                 },
                 (done, branch) => (done.Scan.OnBranch(branch.Name), done.Diagnostic?.OnBranch(branch.Name)));
     }

@@ -115,6 +115,20 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
         return $"{repository.WebUrl}/-/blob/{Uri.EscapeDataString(commitId)}/{encodedPath}";
     }
 
+    public async Task<DateTimeOffset?> GetCommitDateAsync(string repositoryId, string commitId, CancellationToken ct)
+    {
+        using var response = await SendAsync(
+            $"{RepoApi(repositoryId)}/repository/commits/{Uri.EscapeDataString(commitId)}", ct);
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        return CommitDate(document.RootElement);
+    }
+
+    /// <summary>The committer date of a commit as GitLab returns it; none when it is missing.</summary>
+    public static DateTimeOffset? CommitDate(JsonElement commit) =>
+        commit.TryGetProperty("committed_date", out var date) && date.ValueKind == JsonValueKind.String &&
+        date.TryGetDateTimeOffset(out var value) ? value.ToUniversalTime() : null;
+
     private string RepoApi(string id) => $"{_apiBase}/projects/{Uri.EscapeDataString(id)}";
 
     // Offset pagination supported by the GitLab groups, branches and tree endpoints.

@@ -8,6 +8,13 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
     private readonly Dictionary<string, Dictionary<string, string>> _commitFiles = new();
     private readonly Dictionary<(string Repository, string Path), Exception> _failingFiles = new();
     private readonly HashSet<string> _failingBranches = [];
+    private readonly HashSet<string> _failingCommitDates = [];
+
+    /// <summary>The committer date of every commit, unless its read fails.</summary>
+    public static readonly DateTimeOffset CommitDate = new(2026, 10, 1, 8, 30, 0, TimeSpan.Zero);
+
+    /// <summary>Commits whose date was read, in any order.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<string> CommitDatesRead { get; } = new();
 
     private int _inFlight;
     private int _maxInFlight;
@@ -59,6 +66,12 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
         return this;
     }
 
+    public FakeRepositoryProvider FailCommitDate(string commit)
+    {
+        _failingCommitDates.Add(commit);
+        return this;
+    }
+
     public FakeRepositoryProvider FailBranches(string repository)
     {
         _failingBranches.Add(repository);
@@ -83,6 +96,14 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
 
     private Dictionary<string, string> Files(string repositoryId, string commitId) =>
         _commitFiles.TryGetValue(commitId, out var files) ? files : _files[repositoryId];
+
+    public Task<DateTimeOffset?> GetCommitDateAsync(string repositoryId, string commitId, CancellationToken ct)
+    {
+        CommitDatesRead.Enqueue(commitId);
+        return CallAsync<DateTimeOffset?>(() => _failingCommitDates.Contains(commitId)
+            ? throw new HttpRequestException("commit unavailable")
+            : CommitDate, ct);
+    }
 
     public Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct)
     {

@@ -80,7 +80,8 @@ public sealed record RepositoryCoverage(
     CoverageStatus Status,
     int FilesExamined,
     int References,
-    string? Details);
+    string? Details,
+    DateTimeOffset? CommitDate = null);
 
 [JsonConverter(typeof(JsonStringEnumConverter<DependencyResolution>))]
 public enum DependencyResolution { LockFile, Computed }
@@ -136,7 +137,8 @@ public sealed record ProjectCoverage(
     CoverageStatus Status,
     int FilesExamined,
     int Projects,
-    string? Details);
+    string? Details,
+    DateTimeOffset? CommitDate = null);
 
 public sealed record FrameworkReport(
     DateTimeOffset ScannedAt,
