@@ -405,8 +405,10 @@ internal static class PackageDownload
         for (var redirects = 0; ; redirects++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-            var sameHost = uri.Scheme == origin.Scheme && string.Equals(uri.Host, origin.Host, StringComparison.OrdinalIgnoreCase);
-            var response = await (sameHost ? authenticated : anonymous)
+            // The credentials go to the feed's own authority only: same scheme, host and port.
+            var sameAuthority = uri.Scheme == origin.Scheme && uri.Port == origin.Port &&
+                string.Equals(uri.Host, origin.Host, StringComparison.OrdinalIgnoreCase);
+            var response = await (sameAuthority ? authenticated : anonymous)
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             if (response.StatusCode is not (HttpStatusCode.MovedPermanently or HttpStatusCode.Found
                     or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect) ||
