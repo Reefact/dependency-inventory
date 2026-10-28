@@ -248,16 +248,30 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
                         continue;
                     }
                     reached.Add(new Reached(id, package.Version, via));
-                    // A central version pinned below what the graph asks for is a downgrade NuGet refuses (NU1109).
-                    if (pinned.ContainsKey(id) && NuGetVersion.TryParse(package.Version, out var pinnedVersion) &&
-                        ranges.FirstOrDefault(r => !r.Satisfies(pinnedVersion)) is { } violated)
-                        unresolved.Add($"{via}: the central version {package.Version} is pinned below the " +
-                            $"{violated.PrettyPrint()} asked; NuGet refuses this restore (NU1109).");
+                    if (pinned.ContainsKey(id) && NuGetVersion.TryParse(package.Version, out var pinnedVersion))
+                        unresolved.AddRange(PinningIssues(via, pinnedVersion, ranges));
                     if (package.Error is not null) unresolved.Add($"{via} {package.Version}: {package.Error}");
                 }
                 return new Graph(framework, DependencyResolution.Computed,
                     reached.OrderBy(r => r.Id, StringComparer.OrdinalIgnoreCase).ToArray(), unresolved);
             }
+        }
+    }
+
+    /// <summary>
+    /// What NuGet says of a central version pinned outside a range the graph asks for: below its minimum, a downgrade
+    /// it refuses (NU1109); above its maximum, a warning only (NU1608), the restore goes on.
+    /// </summary>
+    private static IEnumerable<string> PinningIssues(string via, NuGetVersion pinned, IReadOnlyList<VersionRange> ranges)
+    {
+        foreach (var range in ranges.Distinct())
+        {
+            if (range.MinVersion is { } min && (pinned < min || pinned == min && !range.IsMinInclusive))
+                yield return $"{via}: the central version {pinned.ToNormalizedString()} is pinned below the " +
+                    $"{range.PrettyPrint()} asked; NuGet refuses this restore (NU1109).";
+            else if (range.MaxVersion is { } max && (pinned > max || pinned == max && !range.IsMaxInclusive))
+                yield return $"{via}: the central version {pinned.ToNormalizedString()} is pinned above the " +
+                    $"{range.PrettyPrint()} asked; NuGet warns of it (NU1608) and restores it.";
         }
     }
 
