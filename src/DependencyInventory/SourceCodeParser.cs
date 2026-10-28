@@ -2,12 +2,14 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 
 namespace DependencyInventory;
 
 /// <summary>
 /// The names a C# file references, read from its syntax alone: no compilation, no semantic model.
-/// Qualified names are dotted (A.B.C) without type arguments nor "global::".
+/// Qualified names are dotted (A.B.C) without type arguments nor "global::". <see cref="Conditional"/> holds the
+/// names of the #if branches whose activation depends on symbols, which are unknown: they may or may not be compiled.
 /// </summary>
 public sealed record SourceSymbols(
     IReadOnlySet<string> Imports,
@@ -15,7 +17,18 @@ public sealed record SourceSymbols(
     IReadOnlySet<string> GlobalQualifiedNames,
     IReadOnlySet<string> Names,
     IReadOnlySet<string> QualifiedNames,
-    IReadOnlySet<string> InvokedMembers);
+    IReadOnlySet<string> InvokedMembers,
+    SourceSymbols? Conditional = null)
+{
+    /// <summary>The names of both, as if every conditional branch were compiled.</summary>
+    public SourceSymbols WithConditional() => Conditional is not { } other ? this : new SourceSymbols(
+        Union(Imports, other.Imports), Union(GlobalImports, other.GlobalImports),
+        Union(GlobalQualifiedNames, other.GlobalQualifiedNames), Union(Names, other.Names),
+        Union(QualifiedNames, other.QualifiedNames), Union(InvokedMembers, other.InvokedMembers));
+
+    private static HashSet<string> Union(IReadOnlySet<string> first, IReadOnlySet<string> second) =>
+        new(first.Concat(second), StringComparer.Ordinal);
+}
 
 /// <summary>What a project file or a Directory.Build.props adds to every source file of a project.</summary>
 public sealed record ProjectImports(
@@ -103,85 +116,173 @@ public static class SourceCodeParser
     private const int MaxDisabledDepth = 3;
 
     /// <summary>
-    /// Reads the names of a file. The code of disabled #if branches is read as well: which symbols the project defines
-    /// is unknown, and a package used only there is still used.
+    /// Reads the names of a file. Code certainly compiled (outside #if, or in #if true) gives the names; code whose
+    /// compilation depends on symbols, active or disabled in this parse, gives the conditional names; code never
+    /// compiled (#if false) is ignored.
     /// </summary>
     public static SourceSymbols Parse(string path, string text)
     {
-        var symbols = new Collector();
-        symbols.Collect(CSharpSyntaxTree.ParseText(text, Options, path).GetRoot(), 0);
-        return new SourceSymbols(symbols.Imports, symbols.GlobalImports, symbols.GlobalQualified, symbols.Names,
-            symbols.Qualified, symbols.Invoked);
+        // An alias declared outside #if applies in conditional code as well, and the other way round.
+        var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        var active = new Collector(aliases);
+        var conditional = new Collector(aliases);
+        Collect(CSharpSyntaxTree.ParseText(text, Options, path).GetRoot(), active, conditional, false, 0);
+        return active.ToSymbols(conditional.ToSymbols(null));
     }
 
-    private sealed class Collector
+    private static void Collect(SyntaxNode root, Collector active, Collector conditional, bool allConditional,
+        int depth)
     {
-        public readonly HashSet<string> Imports = new(StringComparer.Ordinal);
-        public readonly HashSet<string> GlobalImports = new(StringComparer.Ordinal);
-        public readonly HashSet<string> GlobalQualified = new(StringComparer.Ordinal);
-        public readonly HashSet<string> Names = new(StringComparer.Ordinal);
-        public readonly HashSet<string> Qualified = new(StringComparer.Ordinal);
-        public readonly HashSet<string> Invoked = new(StringComparer.Ordinal);
-
-        // using Msg = Contoso.Messaging: Msg.Bus is Contoso.Messaging.Bus.
-        private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
-
-        public void Collect(SyntaxNode root, int depth)
+        var branches = ConditionalBranch.Read(root);
+        foreach (var node in root.DescendantNodes())
         {
-            foreach (var node in root.DescendantNodes())
-            {
-                switch (node)
-                {
-                    case UsingDirectiveSyntax directive when Dotted(directive.NamespaceOrType) is { } target:
-                        // A plain using imports a namespace; using static and aliases name a type, or a namespace
-                        // for an alias, which is then expanded in the names it qualifies.
-                        var isGlobal = directive.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword);
-                        var isType = directive.StaticKeyword.IsKind(SyntaxKind.StaticKeyword) || directive.Alias is not null;
-                        (isType ? isGlobal ? GlobalQualified : Qualified : isGlobal ? GlobalImports : Imports).Add(target);
-                        if (directive.Alias is { } alias) _aliases[alias.Name.Identifier.ValueText] = target;
-                        break;
-                    case BaseNamespaceDeclarationSyntax declaration when FullNamespace(declaration) is { } ns:
-                        // Code in namespace A.B sees the types of A.B and of A.
-                        for (var scope = ns; scope.Length > 0; scope = scope.Contains('.') ? scope[..scope.LastIndexOf('.')] : "")
-                            Imports.Add(scope);
-                        break;
-                    case SimpleNameSyntax simple when !IsInDeclarationName(simple):
-                        Names.Add(simple.Identifier.ValueText);
-                        break;
-                    case QualifiedNameSyntax or AliasQualifiedNameSyntax or MemberAccessExpressionSyntax
-                        when !IsInDeclarationName(node) && Dotted(node) is { } dotted:
-                        AddQualified(dotted);
-                        break;
-                }
+            var activation = allConditional ? Activation.Unknown : ConditionalBranch.At(branches, node.SpanStart);
+            if (activation != Activation.Dead) (activation == Activation.Certain ? active : conditional).Add(node);
+        }
 
-                if (node is AttributeSyntax attribute)
+        if (depth >= MaxDisabledDepth) return;
+        foreach (var disabled in root.DescendantTrivia().Where(t => t.IsKind(SyntaxKind.DisabledTextTrivia)))
+            if (ConditionalBranch.At(branches, disabled.SpanStart) != Activation.Dead)
+                Collect(CSharpSyntaxTree.ParseText(disabled.ToString(), Options).GetRoot(), active, conditional, true,
+                    depth + 1);
+    }
+
+    private enum Activation { Certain, Unknown, Dead }
+
+    /// <summary>The code between two directives of an #if block, and whether it is compiled.</summary>
+    private sealed record ConditionalBranch(TextSpan Span, Activation Activation)
+    {
+        /// <summary>
+        /// The branches of the #if blocks, nested ones included. A condition made of true, false, !, &amp;&amp;, ||,
+        /// == and != only is evaluated; any symbol makes it unknown. A branch after one certainly taken is dead.
+        /// </summary>
+        public static IReadOnlyList<ConditionalBranch> Read(SyntaxNode root)
+        {
+            var branches = new List<ConditionalBranch>();
+            var blocks = new Stack<(Activation Parent, bool Taken, bool MaybeTaken, int Start, Activation Current)>();
+            foreach (var directive in root.DescendantTrivia().Where(t => t.IsDirective)
+                         .Select(t => t.GetStructure()).OfType<DirectiveTriviaSyntax>())
+            {
+                var (condition, opens, closes) = directive switch
                 {
-                    // [Fact] is FactAttribute: both spellings are kept.
-                    if (Dotted(attribute.Name) is { } attributeName) AddQualified(attributeName + "Attribute");
-                    Names.Add(RightmostName(attribute.Name) + "Attribute");
+                    IfDirectiveTriviaSyntax d => (Evaluate(d.Condition), true, false),
+                    ElifDirectiveTriviaSyntax d => (Evaluate(d.Condition), false, true),
+                    ElseDirectiveTriviaSyntax => (true, false, true),
+                    EndIfDirectiveTriviaSyntax => ((bool?)null, false, true),
+                    _ => (null, false, false)
+                };
+                if (!opens && !closes || closes && blocks.Count == 0) continue;
+                if (closes)
+                {
+                    var block = blocks.Pop();
+                    branches.Add(new(TextSpan.FromBounds(block.Start, directive.FullSpan.Start), block.Current));
+                    if (directive is EndIfDirectiveTriviaSyntax) continue;
+                    var activation = block.Taken || condition == false ? Activation.Dead
+                        : condition == true && !block.MaybeTaken ? Activation.Certain : Activation.Unknown;
+                    blocks.Push((block.Parent, block.Taken || condition == true, block.MaybeTaken || condition != false,
+                        directive.FullSpan.End, Combine(block.Parent, activation)));
                 }
-                else if (node is InvocationExpressionSyntax invocation)
+                else
                 {
-                    var member = invocation.Expression switch
-                    {
-                        MemberAccessExpressionSyntax access => access.Name.Identifier.ValueText,
-                        MemberBindingExpressionSyntax binding => binding.Name.Identifier.ValueText,
-                        _ => null
-                    };
-                    if (member is not null) Invoked.Add(member);
+                    var parent = blocks.Count > 0 ? blocks.Peek().Current : Activation.Certain;
+                    var activation = condition switch { true => Activation.Certain, false => Activation.Dead, _ => Activation.Unknown };
+                    blocks.Push((parent, condition == true, condition != false, directive.FullSpan.End,
+                        Combine(parent, activation)));
                 }
             }
+            return branches;
+        }
 
-            if (depth >= MaxDisabledDepth) return;
-            foreach (var disabled in root.DescendantTrivia().Where(t => t.IsKind(SyntaxKind.DisabledTextTrivia)))
-                Collect(CSharpSyntaxTree.ParseText(disabled.ToString(), Options).GetRoot(), depth + 1);
+        /// <summary>The activation of the innermost branch holding a position; certain outside any #if.</summary>
+        public static Activation At(IReadOnlyList<ConditionalBranch> branches, int position) =>
+            branches.Where(b => b.Span.Contains(position)).MinBy(b => b.Span.Length)?.Activation ?? Activation.Certain;
+
+        private static Activation Combine(Activation parent, Activation own) => (Activation)Math.Max((int)parent, (int)own);
+
+        private static bool? Evaluate(ExpressionSyntax condition) => condition switch
+        {
+            LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.TrueLiteralExpression) => true,
+            LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.FalseLiteralExpression) => false,
+            ParenthesizedExpressionSyntax p => Evaluate(p.Expression),
+            PrefixUnaryExpressionSyntax { RawKind: (int)SyntaxKind.LogicalNotExpression } not => !Evaluate(not.Operand),
+            BinaryExpressionSyntax binary => (binary.Kind(), Evaluate(binary.Left), Evaluate(binary.Right)) switch
+            {
+                (SyntaxKind.LogicalAndExpression, false, _) or (SyntaxKind.LogicalAndExpression, _, false) => false,
+                (SyntaxKind.LogicalAndExpression, true, true) => true,
+                (SyntaxKind.LogicalOrExpression, true, _) or (SyntaxKind.LogicalOrExpression, _, true) => true,
+                (SyntaxKind.LogicalOrExpression, false, false) => false,
+                (SyntaxKind.EqualsExpression, { } left, { } right) => left == right,
+                (SyntaxKind.NotEqualsExpression, { } left, { } right) => left != right,
+                _ => null
+            },
+            _ => null
+        };
+    }
+
+    private sealed class Collector(Dictionary<string, string> aliases)
+    {
+        private readonly HashSet<string> _imports = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _globalImports = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _globalQualified = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _names = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _qualified = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _invoked = new(StringComparer.Ordinal);
+
+        // using Msg = Contoso.Messaging: Msg.Bus is Contoso.Messaging.Bus.
+        private readonly Dictionary<string, string> _aliases = aliases;
+
+        public SourceSymbols ToSymbols(SourceSymbols? conditional) =>
+            new(_imports, _globalImports, _globalQualified, _names, _qualified, _invoked, conditional);
+
+        public void Add(SyntaxNode node)
+        {
+            switch (node)
+            {
+                case UsingDirectiveSyntax directive when Dotted(directive.NamespaceOrType) is { } target:
+                    // A plain using imports a namespace; using static and aliases name a type, or a namespace
+                    // for an alias, which is then expanded in the names it qualifies.
+                    var isGlobal = directive.GlobalKeyword.IsKind(SyntaxKind.GlobalKeyword);
+                    var isType = directive.StaticKeyword.IsKind(SyntaxKind.StaticKeyword) || directive.Alias is not null;
+                    (isType ? isGlobal ? _globalQualified : _qualified : isGlobal ? _globalImports : _imports).Add(target);
+                    if (directive.Alias is { } alias) _aliases[alias.Name.Identifier.ValueText] = target;
+                    break;
+                case BaseNamespaceDeclarationSyntax declaration when FullNamespace(declaration) is { } ns:
+                    // Code in namespace A.B sees the types of A.B and of A.
+                    for (var scope = ns; scope.Length > 0; scope = scope.Contains('.') ? scope[..scope.LastIndexOf('.')] : "")
+                        _imports.Add(scope);
+                    break;
+                case SimpleNameSyntax simple when !IsInDeclarationName(simple):
+                    _names.Add(simple.Identifier.ValueText);
+                    break;
+                case QualifiedNameSyntax or AliasQualifiedNameSyntax or MemberAccessExpressionSyntax
+                    when !IsInDeclarationName(node) && Dotted(node) is { } dotted:
+                    AddQualified(dotted);
+                    break;
+            }
+
+            if (node is AttributeSyntax attribute)
+            {
+                // [Fact] is FactAttribute: both spellings are kept.
+                if (Dotted(attribute.Name) is { } attributeName) AddQualified(attributeName + "Attribute");
+                _names.Add(RightmostName(attribute.Name) + "Attribute");
+            }
+            else if (node is InvocationExpressionSyntax invocation)
+            {
+                var member = invocation.Expression switch
+                {
+                    MemberAccessExpressionSyntax access => access.Name.Identifier.ValueText,
+                    MemberBindingExpressionSyntax binding => binding.Name.Identifier.ValueText,
+                    _ => null
+                };
+                if (member is not null) _invoked.Add(member);
+            }
         }
 
         private void AddQualified(string dotted)
         {
-            Qualified.Add(dotted);
+            _qualified.Add(dotted);
             var first = dotted.IndexOf('.') is var dot and >= 0 ? dotted[..dot] : dotted;
-            if (_aliases.TryGetValue(first, out var target)) Qualified.Add(target + dotted[first.Length..]);
+            if (_aliases.TryGetValue(first, out var target)) _qualified.Add(target + dotted[first.Length..]);
         }
     }
 

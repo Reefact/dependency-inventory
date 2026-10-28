@@ -123,7 +123,8 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
 
         var analyzedProjects = targets.Where(projects.ContainsKey).Select(p => projects[p]).ToArray();
         var surface = await SurfaceAsync(content, analyzedProjects.SelectMany(p => p.Frameworks).ToArray(), 0, ct);
-        var used = analyzedProjects.SelectMany(surface.Index.UsedIn)
+        var usage = analyzedProjects.Select(surface.Index.UsedIn).ToArray();
+        var used = usage.SelectMany(u => u.Used)
             .GroupBy(x => x.Type, StringComparer.Ordinal)
             .Select(g => new UsedType(g.Key, g.Sum(x => x.Files)))
             .OrderBy(t => t.Type, StringComparer.Ordinal)
@@ -132,11 +133,15 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
 
         var others = targets.Where(t => !IsCSharp(t)).ToArray();
         var unread = analyzedProjects.Sum(p => p.Failures);
+        var conditional = usage.SelectMany(u => u.ConditionalOnly).Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal).ToArray();
         // A package acting on the build only is never reported unused, whatever the language of the projects.
         UsageResult result =
             content.DevelopmentDependency ? new(PackageUsage.BuildOnly, [], "Development dependency.")
             : !content.HasTypes && content.HasBuildAssets
                 ? new(PackageUsage.BuildOnly, [], "No types of its own; build, analyzer, tool or content assets.")
+            : conditional.Length > 0
+                ? Undetermined($"Only referenced in #if branches depending on symbols: {string.Join(", ", conditional)}.")
             : others.Length > 0 ? Undetermined($"Not analyzed (C# only): {string.Join(", ", others)}.")
             : unread > 0 ? Undetermined($"{unread} source files could not be read.")
             : surface.Errors.Count > 0 ? Undetermined($"Dependency not read: {surface.Errors[0]}")
@@ -285,29 +290,41 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
         }
 
         /// <summary>
-        /// The types of the package referenced by a project, with the number of its files referencing them. A type
-        /// named by a Using item of the project file (Static or Alias) counts as used, without file.
+        /// The types of the package a project certainly references, with the number of its files referencing them,
+        /// and those it only references in #if branches depending on symbols, which may not be compiled. A type named
+        /// by a Using item of the project file (Static or Alias) counts as used, without file.
         /// </summary>
-        public IEnumerable<(string Type, int Files)> UsedIn(ProjectSources project)
+        public (IReadOnlyList<(string Type, int Files)> Used, IReadOnlySet<string> ConditionalOnly) UsedIn(
+            ProjectSources project)
         {
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (var type in project.QualifiedUsings.SelectMany(q => Qualified(q, project.Imports.Contains)))
                 counts.TryAdd(type, 0);
+            var conditional = new HashSet<string>(StringComparer.Ordinal);
             foreach (var file in project.Files)
             {
-                bool Imported(string ns) => ns.Length == 0 || file.Imports.Contains(ns) || project.Imports.Contains(ns);
-                var used = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var name in file.Names)
-                foreach (var type in _byName[name])
-                    if (Imported(type.Namespace)) used.Add(type.FullName);
-                foreach (var name in file.QualifiedNames.Concat(file.GlobalQualifiedNames))
-                    used.UnionWith(Qualified(name, Imported));
-                foreach (var member in file.InvokedMembers)
-                foreach (var extension in _extensionsByName[member])
-                    if (Imported(extension.Namespace)) used.Add(extension.DeclaringType);
+                var used = UsedIn(file, project);
                 foreach (var type in used) counts[type] = counts.GetValueOrDefault(type) + 1;
+                // A conditional using may bring a certain name in scope, and the other way round.
+                if (file.Conditional is not null) conditional.UnionWith(UsedIn(file.WithConditional(), project));
             }
-            return counts.Select(x => (x.Key, x.Value));
+            conditional.ExceptWith(counts.Keys);
+            return (counts.Select(x => (x.Key, x.Value)).ToArray(), conditional);
+        }
+
+        private HashSet<string> UsedIn(SourceSymbols file, ProjectSources project)
+        {
+            bool Imported(string ns) => ns.Length == 0 || file.Imports.Contains(ns) || project.Imports.Contains(ns);
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var name in file.Names)
+            foreach (var type in _byName[name])
+                if (Imported(type.Namespace)) used.Add(type.FullName);
+            foreach (var name in file.QualifiedNames.Concat(file.GlobalQualifiedNames))
+                used.UnionWith(Qualified(name, Imported));
+            foreach (var member in file.InvokedMembers)
+            foreach (var extension in _extensionsByName[member])
+                if (Imported(extension.Namespace)) used.Add(extension.DeclaringType);
+            return used;
         }
 
         /// <summary>The types a dotted name designates: fully qualified, or relative to an imported namespace.</summary>
