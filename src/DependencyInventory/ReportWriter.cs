@@ -35,8 +35,11 @@ public static class ReportWriter
             ["Project", "Repository", "Branch", "Status", "FilesExamined", "References", "Details"],
             report.Coverage.Select(x => new[] { x.Project, x.Repository, x.Branch ?? "", x.Status.ToString(),
                 x.FilesExamined.ToString(), x.References.ToString(), x.Details ?? "" }), ct);
-        if (usedTypes)
-            await WriteCsvAsync(Path.Combine(absolute, "used-types.csv"),
+        // Without --used-types, the file of a previous run in the same folder would look like part of this report.
+        var usedTypesFile = Path.Combine(absolute, "used-types.csv");
+        if (!usedTypes) File.Delete(usedTypesFile);
+        else
+            await WriteCsvAsync(usedTypesFile,
                 ["Project", "Repository", "File", "Package", "Version", "Source", "Type", "Files"],
                 references.SelectMany(x => (x.UsedTypes ?? []).Select(t => new[] { x.Project, x.Repository, x.File, x.Package,
                     x.Version ?? "", x.Source?.ToString() ?? "", t.Type, t.Files.ToString() })), ct);

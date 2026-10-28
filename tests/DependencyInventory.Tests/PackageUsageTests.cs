@@ -196,7 +196,7 @@ public sealed class PackageUsageTests
         Assert.Equal(PackageUsage.Undetermined, Find(references, "/src/Api/Api.csproj", "Contoso.Messaging", "$(V)").Usage);
         var reasons = diagnostic.Usages.Where(u => u.Usage == PackageUsage.Undetermined)
             .ToDictionary(u => $"{u.File} {u.Package} {u.Version}", u => u.Reason);
-        Assert.Equal("Not found in feed feed-a, feed project/feed-b, nuget.org",
+        Assert.Equal("No version satisfying (>= 1.0.0) in feed feed-a, feed project/feed-b, nuget.org",
             reasons["/src/Api/Api.csproj Contoso.Missing 1.0.0"]);
         Assert.Contains("$(V)", reasons["/src/Api/Api.csproj Contoso.Messaging $(V)"]);
         Assert.Equal("Not analyzed (C# only): /src/Legacy/Legacy.vbproj.",
@@ -438,17 +438,58 @@ public sealed class PackageUsageTests
     // --- Versions
 
     [Theory]
-    [InlineData("1.2.3", "1.2.3")]
-    [InlineData("1.2", "1.2.0")]
-    [InlineData("[1.0,2.0)", "1.0.0")]
-    [InlineData("[1.5]", "1.5.0")]
-    [InlineData("(1.0,)", null)]
-    [InlineData("1.*", null)]
-    [InlineData("$(SerilogVersion)", null)]
-    [InlineData(null, null)]
-    public void TheVersionReadIsTheLiteralOneOrTheMinimumOfARange(string? declared, string? expected)
+    [InlineData("1.2.3", true)]
+    [InlineData("[1.0,2.0)", true)]
+    [InlineData("1.*", true)]
+    [InlineData("$(SerilogVersion)", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void ADeclaredVersionStandsForARange(string? declared, bool resolved)
     {
-        Assert.Equal(expected, PackageUsageAnalyzer.ResolveVersion(declared)?.ToNormalizedString());
+        Assert.Equal(resolved, PackageUsageAnalyzer.ResolveRange(declared) is not null);
+    }
+
+    // NuGet restores the lowest published version satisfying the range, the highest one for a floating version, and
+    // a prerelease only when the range's minimum is one.
+    [Theory]
+    [InlineData("1.2.0", "1.5.0")]
+    [InlineData("1.5.0", "1.5.0")]
+    [InlineData("[1.0,2.0)", "1.5.0")]
+    [InlineData("(1.5.0,)", "1.5.5")]
+    [InlineData("1.*", "1.6.0")]
+    [InlineData("2.1.0-beta.1", "2.1.0-beta.2")]
+    [InlineData("[1.0,1.2)", null)]
+    public async Task TheVersionReadIsTheOneNuGetRestores(string declared, string? expected)
+    {
+        var bytes = TestPackages.Nupkg("Contoso.Core", "1.0.0", null,
+            ("lib/net8.0/Contoso.Core.dll", "namespace Contoso.Core { public class Bus { } }"));
+        var feed = new FakePackageFeed();
+        foreach (var version in new[] { "1.5.0", "1.6.0", "1.6.0-beta.1", "2.0.0", "2.1.0-beta.2" })
+            feed.AddPackage("Contoso.Core", version, bytes);
+        var nugetOrg = new FakePackageFeed { Origin = "https://api.nuget.org/v3/index.json" }
+            .Add("Contoso.Core", "1.5.5", null, bytes);
+        var catalog = new PackageCatalog([new PackageSourceEntry(feed, PackageSource.Feed, "feed"),
+            new PackageSourceEntry(nugetOrg, PackageSource.NuGetOrg, null)]);
+
+        var resolution = await catalog.ResolveAsync("Contoso.Core", PackageUsageAnalyzer.ResolveRange(declared)!, default);
+
+        Assert.Equal(expected, resolution.Content is null ? null : resolution.Version);
+    }
+
+    [Fact]
+    public async Task TheLowestVersionIsTakenAcrossSources()
+    {
+        var bytes = TestPackages.Nupkg("Contoso.Core", "1.0.0", null,
+            ("lib/net8.0/Contoso.Core.dll", "namespace Contoso.Core { public class Bus { } }"));
+        var feed = new FakePackageFeed().AddPackage("Contoso.Core", "1.5.0", bytes);
+        var nugetOrg = new FakePackageFeed { Origin = "https://api.nuget.org/v3/index.json" }
+            .Add("Contoso.Core", "1.2.0", null, bytes);
+        var catalog = new PackageCatalog([new PackageSourceEntry(feed, PackageSource.Feed, "feed"),
+            new PackageSourceEntry(nugetOrg, PackageSource.NuGetOrg, null)]);
+
+        var resolution = await catalog.ResolveAsync("Contoso.Core", PackageUsageAnalyzer.ResolveRange("1.0.0")!, default);
+
+        Assert.Equal(("1.2.0", PackageSource.NuGetOrg), (resolution.Version, resolution.Source));
     }
 
     // --- Source code
