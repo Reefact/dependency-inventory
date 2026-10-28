@@ -68,9 +68,11 @@ TEXT = {
         "used": lambda n: f"{n} used",
         "not_used": "not used",
         "undetermined": lambda n: f"{n} undetermined",
-        "usage_line": lambda used, total: f"used by the code in {used} of {total}",
-        "legend_used": "Used by the code",
-        "legend_used_text": "solid part of the bar; a package acting on the build only (analyzer, build assets) counts as used",
+        "usage_line": lambda used, total: f"{used} of {total} reference{'' if total == 1 else 's'} "
+                                          f"{'is' if total == 1 else 'are'} classified as used",
+        "legend_used": "Used",
+        "legend_used_text": "solid part of the bar: the code references the package's types, or the package acts on the "
+                            "build only (analyzer, build assets)",
         "legend_unused": "Declared but not used",
         "legend_unused_text": "faded part: the code references none of its types, the reference can likely be removed",
         "legend_undetermined": "Usage undetermined",
@@ -105,10 +107,12 @@ TEXT = {
         "used": lambda n: f"{n} utilisée{'' if n == 1 else 's'}",
         "not_used": "non utilisée",
         "undetermined": lambda n: f"{n} indéterminée{'' if n == 1 else 's'}",
-        "usage_line": lambda used, total: f"utilisée par le code dans {used} sur {total}",
-        "legend_used": "Utilisée par le code",
-        "legend_used_text": "partie pleine de la barre ; un package qui n'agit que sur la compilation (analyseur, "
-                            "fichiers de build) compte comme utilisé",
+        "usage_line": lambda used, total: f"{used} référence{'' if used <= 1 else 's'} "
+                                          f"considérée{'' if used <= 1 else 's'} comme utilisée{'' if used <= 1 else 's'} "
+                                          f"sur {total}",
+        "legend_used": "Utilisée",
+        "legend_used_text": "partie pleine de la barre : le code utilise les types du package, ou le package n'agit que "
+                            "sur la compilation (analyseur, fichiers de build)",
         "legend_unused": "Déclarée mais inutilisée",
         "legend_unused_text": "partie pâle : le code n'utilise aucun de ses types, la référence peut sans doute être retirée",
         "legend_undetermined": "Usage indéterminé",
@@ -221,7 +225,8 @@ def usage_fields(counts: dict[str, int], total: int, text: dict) -> dict:
         "unused": counts["unused"],
         "undetermined": counts["undetermined"],
         "valueLabel": " · ".join([str(total), *parts]),
-        "usageLine": text["usage_line"](counts["used"], text["references"](total)),
+        "usageLabel": " · ".join(parts),
+        "usageLine": text["usage_line"](counts["used"], total),
     }
 
 
