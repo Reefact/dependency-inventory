@@ -42,6 +42,13 @@ public sealed class BranchSelectionTests
     }
 
     [Fact]
+    public void TheDefaultBranchIsMatchedWithItsExactCase()
+    {
+        Assert.Equal("main", Select("Main,main", null, "main"));
+        Assert.Equal("main", Select("Main,main", ["@default"], "main"));
+    }
+
+    [Fact]
     public void NoRequestedBranchMeansNone() =>
         Assert.Null(Select("develop,feature/x", ["release", "main"], "develop"));
 

@@ -142,7 +142,8 @@ public static class BranchSelector
         {
             GitBranch? found;
             if (entry.Equals(BranchPolicy.DefaultBranch, StringComparison.OrdinalIgnoreCase))
-                found = defaultBranch is null ? null : Named(available, defaultBranch);
+                // The provider gives the exact name: Main and main may be two branches.
+                found = defaultBranch is null ? null : available.FirstOrDefault(b => b.Name == defaultBranch);
             else if (entry.IndexOfAny(['*', '?']) >= 0)
             {
                 var glob = BranchPolicy.Glob(entry);
