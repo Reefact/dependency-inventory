@@ -178,6 +178,42 @@ public sealed class TransitiveTests
     }
 
     [Theory]
+    [InlineData("3.0.0", null)]
+    [InlineData("2.0.0", "A > G: the central version 2.0.0 is pinned above the (>= 1.0.0 && < 2.0.0) asked; " +
+        "NuGet warns of it (NU1608) and restores it.")]
+    [InlineData("1.0.0", "A > G: the central version 1.0.0 is pinned below the (> 1.0.0 && < 2.0.0) asked; " +
+        "NuGet refuses this restore (NU1109).")]
+    public async Task APinnedVersionOutsideTheAskedRangesIsReportedAsNuGetWould(string pin, string? issue)
+    {
+        // A asks for G (1.0.0, 2.0.0) and [1.0.0, 2.0.0): 2.0.0 is above both, 1.0.0 below the first one only.
+        var feed = new FakePackageFeed { Origin = "https://api.nuget.org/v3/index.json" }
+            .Package("A", "1.0.0", """<dependency id="G" version="(1.0.0, 2.0.0)" /><dependency id="H" version="1.0.0" />""")
+            .Package("H", "1.0.0", """<dependency id="G" version="[1.0.0, 2.0.0)" />""")
+            .Package("G", "1.0.0").Package("G", "1.5.0").Package("G", "2.0.0").Package("G", "3.0.0");
+        var (result, diagnostic) = await ScanAsync(new()
+        {
+            ["/Directory.Packages.props"] = $"""
+                <Project>
+                  <PropertyGroup>
+                    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+                  </PropertyGroup>
+                  <ItemGroup>
+                    <PackageVersion Include="A" Version="1.0.0" /><PackageVersion Include="G" Version="{pin}" />
+                  </ItemGroup>
+                </Project>
+                """,
+            ["/App/App.csproj"] = Project("net8.0", "A")
+        }, catalog: Catalog(feed));
+
+        Assert.Contains($"net8.0 G {pin} A > G Computed", Rows(result));
+        var unresolved = Assert.Single(diagnostic.Transitive).Unresolved;
+        if (pin == "3.0.0")
+            Assert.Equal(2, unresolved.Count(u => u.Contains("NU1608")));
+        else
+            Assert.Contains(issue!, unresolved);
+    }
+
+    [Theory]
     [InlineData("<TargetFramework>$(TargetNet)</TargetFramework>",
         "Target framework not resolved: the dependencies of every group of the packages are merged, so packages of " +
         "a framework the project does not target may be listed.")]
