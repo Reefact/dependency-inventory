@@ -506,7 +506,7 @@ public sealed class FeedTests
     private static (AzureArtifactsFeed Feed, StubServer Server) Client(Dictionary<string, (HttpStatusCode, string)> responses)
     {
         var server = new StubServer(responses);
-        var feed = new AzureArtifactsFeed(new AzureFeed("acme", null, "feed"), new HttpClient(server));
+        var feed = new AzureArtifactsFeed(new AzureFeed("acme", null, "feed"), new HttpClient(server), new HttpClient(server));
         return (feed, server);
     }
 
@@ -682,11 +682,50 @@ public sealed class FeedTests
         }
     }
 
-    /// <summary>Answers from a fixed table of URLs; any other URL is a 404.</summary>
-    private sealed class StubServer(Dictionary<string, (HttpStatusCode Status, string Body)> responses) : HttpMessageHandler
+    [Fact]
+    public async Task APackageRedirectedToTheBlobStorageIsReadWithoutTheCredentials()
+    {
+        // Azure Artifacts answers a package download with HTTP 303 to a signed address of its blob storage.
+        const string blob = "https://vsblob.example.com/packages/a.1.0.0.nupkg?sig=signed";
+        var server = new StubServer(new()
+        {
+            [Index] = IndexResponse,
+            [Base + "a/1.0.0/a.1.0.0.nupkg"] = (HttpStatusCode.SeeOther, ""),
+            [blob] = Ok("zip content")
+        }, new() { [Base + "a/1.0.0/a.1.0.0.nupkg"] = blob });
+        var authenticated = new HttpClient(server);
+        authenticated.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", "secret");
+        using var feed = new AzureArtifactsFeed(new AzureFeed("acme", null, "feed"), authenticated, new HttpClient(server));
+
+        await using var package = await feed.GetPackageAsync("A", "1.0.0", default);
+
+        Assert.Equal("zip content", await new StreamReader(package!).ReadToEndAsync());
+        Assert.True(server.Authorized[Base + "a/1.0.0/a.1.0.0.nupkg"]);
+        Assert.False(server.Authorized[blob]);
+    }
+
+    [Fact]
+    public async Task ARedirectionToAnAddressThatIsNotHttpsIsRefused()
+    {
+        var server = new StubServer(new()
+        {
+            [Index] = IndexResponse,
+            [Base + "a/1.0.0/a.1.0.0.nupkg"] = (HttpStatusCode.Found, "")
+        }, new() { [Base + "a/1.0.0/a.1.0.0.nupkg"] = "http://vsblob.example.com/a.nupkg" });
+        using var feed = new AzureArtifactsFeed(new AzureFeed("acme", null, "feed"), new HttpClient(server), new HttpClient(server));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => feed.GetPackageAsync("A", "1.0.0", default));
+    }
+
+    /// <summary>Answers from a fixed table of URLs, redirections included; any other URL is a 404.</summary>
+    private sealed class StubServer(Dictionary<string, (HttpStatusCode Status, string Body)> responses,
+        Dictionary<string, string>? locations = null) : HttpMessageHandler
     {
         public List<string> Requests { get; } = [];
         public List<HttpMethod> Methods { get; } = [];
+
+        /// <summary>Whether each URL was requested with credentials.</summary>
+        public Dictionary<string, bool> Authorized { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -695,9 +734,12 @@ public sealed class FeedTests
             {
                 Requests.Add(url);
                 Methods.Add(request.Method);
+                Authorized[url] = request.Headers.Authorization is not null;
             }
             var (status, body) = responses.TryGetValue(url, out var response) ? response : (HttpStatusCode.NotFound, "");
-            return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+            var message = new HttpResponseMessage(status) { Content = new StringContent(body) };
+            if (locations?.TryGetValue(url, out var location) == true) message.Headers.Location = new Uri(location);
+            return Task.FromResult(message);
         }
     }
 }

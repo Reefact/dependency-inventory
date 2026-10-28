@@ -103,6 +103,7 @@ public sealed class AzureArtifactsFeed : IPackageFeed
         ["", "&isListed=false", "&isRelease=false", "&isRelease=false&isListed=false"];
     private readonly AzureFeed _feed;
     private readonly HttpClient _http;
+    private readonly HttpClient _anonymous;
     private readonly SemaphoreSlim _indexLock = new(1, 1);
     private string? _packageBaseAddress;
     private Task<IReadOnlySet<string>>? _publicUpstreams;
@@ -110,17 +111,21 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     public string Origin => _feed.IndexUrl;
 
     public AzureArtifactsFeed(AzureFeed feed, string login, string pat, Action<RetryNotice>? onRetry = null)
-        : this(feed, RepositoryHttpClient.Create(onRetry))
+        : this(feed, RepositoryHttpClient.Create(onRetry), RepositoryHttpClient.Create(onRetry))
     {
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{login}:{pat}"));
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", encoded);
     }
 
-    /// <summary>Uses <paramref name="http"/> as is, authentication included.</summary>
-    public AzureArtifactsFeed(AzureFeed feed, HttpClient http)
+    /// <summary>
+    /// Uses <paramref name="http"/> as is, authentication included, and <paramref name="anonymous"/> for the
+    /// redirections to another host, such as the blob storage a package is downloaded from.
+    /// </summary>
+    public AzureArtifactsFeed(AzureFeed feed, HttpClient http, HttpClient anonymous)
     {
         _feed = feed;
         _http = http;
+        _anonymous = anonymous;
     }
 
     public async Task<IReadOnlyList<string>> GetPackageIdsAsync(CancellationToken ct)
@@ -289,8 +294,7 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     /// <summary>The response, or null on HTTP 404.</summary>
     private async Task<HttpResponseMessage?> SendAsync(string url, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        var response = await PackageDownload.GetAsync(_http, _anonymous, url, ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             response.Dispose();
@@ -313,6 +317,7 @@ public sealed class AzureArtifactsFeed : IPackageFeed
     public void Dispose()
     {
         _http.Dispose();
+        if (!ReferenceEquals(_anonymous, _http)) _anonymous.Dispose();
         _indexLock.Dispose();
     }
 }
@@ -363,8 +368,8 @@ public sealed class NuGetOrgFeed : IPackageFeed
     /// <summary>The response, or null on HTTP 404.</summary>
     private async Task<HttpResponseMessage?> SendAsync(string url, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        // nuget.org is read anonymously: its own client follows the redirections.
+        var response = await PackageDownload.GetAsync(_http, _http, url, ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             response.Dispose();
@@ -384,6 +389,36 @@ public sealed class NuGetOrgFeed : IPackageFeed
 
 internal static class PackageDownload
 {
+    private const int MaxRedirections = 5;
+
+    /// <summary>
+    /// A GET that follows redirections: Azure Artifacts answers a package download with HTTP 303 to its blob storage.
+    /// The clients do not follow them by themselves, so that credentials never leave their host: a redirection to
+    /// another host is read with <paramref name="anonymous"/>, and only to HTTPS. Returns the last response, a
+    /// redirection when there are too many.
+    /// </summary>
+    public static async Task<HttpResponseMessage> GetAsync(HttpClient authenticated, HttpClient anonymous, string url,
+        CancellationToken ct)
+    {
+        var origin = new Uri(url);
+        var uri = origin;
+        for (var redirections = 0; ; redirections++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            var sameHost = uri.Scheme == origin.Scheme && string.Equals(uri.Host, origin.Host, StringComparison.OrdinalIgnoreCase);
+            var response = await (sameHost ? authenticated : anonymous)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (response.StatusCode is not (HttpStatusCode.MovedPermanently or HttpStatusCode.Found
+                    or HttpStatusCode.SeeOther or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect) ||
+                response.Headers.Location is not { } location || redirections == MaxRedirections)
+                return response;
+            response.Dispose();
+            uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
+            if (uri.Scheme != Uri.UriSchemeHttps)
+                throw new HttpRequestException($"Redirected to an address that is not HTTPS: {uri.GetLeftPart(UriPartial.Path)}");
+        }
+    }
+
     // The NuGet package content API expects lowercase ids and versions.
     public static string Lower(string value) => Uri.EscapeDataString(value.ToLowerInvariant());
 
