@@ -75,12 +75,38 @@ public sealed record RepositoryCoverage(
     int References,
     string? Details);
 
+[JsonConverter(typeof(JsonStringEnumConverter<DependencyResolution>))]
+public enum DependencyResolution { LockFile, Computed }
+
+/// <summary>
+/// A package a project depends on without declaring it, for one target framework (none when it is unknown), and the
+/// path that brings it: Via goes from the declared reference to the package, e.g. "Z > W > Y".
+/// </summary>
+public sealed record TransitiveDependency(
+    string Project,
+    string Repository,
+    string Branch,
+    string Commit,
+    string File,
+    string? Framework,
+    string Package,
+    string Version,
+    string Via,
+    DependencyResolution Resolution,
+    IReadOnlyList<string> MatchedFilters,
+    PackageUsage? Usage = null,
+    PackageSource? Source = null,
+    string? Feed = null,
+    IReadOnlyList<UsedType>? UsedTypes = null);
+
 public sealed record ScanReport(
     DateTimeOffset ScannedAt,
     string Origin,
     IReadOnlyList<DependencyFilter> Filters,
     IReadOnlyList<PackageOccurrence> Occurrences,
-    IReadOnlyList<RepositoryCoverage> Coverage);
+    IReadOnlyList<RepositoryCoverage> Coverage,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<TransitiveDependency>? TransitiveDependencies = null);
 
 /// <summary>One target framework of one project file; no framework when it could not be resolved.</summary>
 public sealed record FrameworkOccurrence(

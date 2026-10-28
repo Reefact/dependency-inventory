@@ -7,11 +7,16 @@ namespace DependencyInventory;
 /// <summary>A dependency declared by a .nuspec; no framework when it applies to all of them.</summary>
 public sealed record NuspecDependency(string? Framework, string Id, string? VersionRange, DependencyKind Kind);
 
-/// <summary>What a .nuspec declares: its metadata, its target frameworks and its dependencies.</summary>
+/// <summary>
+/// What a .nuspec declares: its metadata, its target frameworks and its dependencies. DependencyGroups lists the
+/// frameworks of its dependency groups, empty ones included ("" for a group without framework): NuGet picks the
+/// nearest group, and an empty one means no dependency for that framework.
+/// </summary>
 public sealed record NuspecContent(
     PackageMetadata Metadata,
     IReadOnlyList<string> Frameworks,
-    IReadOnlyList<NuspecDependency> Dependencies);
+    IReadOnlyList<NuspecDependency> Dependencies,
+    IReadOnlyList<string>? DependencyGroups = null);
 
 public static class NuspecParser
 {
@@ -24,6 +29,7 @@ public static class NuspecParser
         var metadata = XDocument.Parse(xml).Root?.Elements().FirstOrDefault(e => e.Name.LocalName == "metadata");
         var frameworks = new List<string>();
         var dependencies = new List<NuspecDependency>();
+        var dependencyGroups = new List<string>();
         foreach (var section in metadata?.Elements() ?? [])
         {
             var (child, kind, idAttribute) = section.Name.LocalName switch
@@ -41,6 +47,7 @@ public static class NuspecParser
                 var framework = isGroup ? Normalize((string?)element.Attribute("targetFramework")) : null;
                 if (framework is not null && !frameworks.Contains(framework, StringComparer.OrdinalIgnoreCase))
                     frameworks.Add(framework);
+                if (isGroup && kind == DependencyKind.Package) dependencyGroups.Add(framework ?? "");
                 foreach (var dependency in isGroup ? element.Elements() : [element])
                 {
                     if (dependency.Name.LocalName != child) continue;
@@ -51,7 +58,7 @@ public static class NuspecParser
                 }
             }
         }
-        return new NuspecContent(ReadMetadata(metadata), frameworks, dependencies);
+        return new NuspecContent(ReadMetadata(metadata), frameworks, dependencies, dependencyGroups);
     }
 
     private static PackageMetadata ReadMetadata(XElement? metadata)
