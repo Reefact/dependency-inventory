@@ -73,15 +73,34 @@ public sealed class SecretServiceStoreTests
     {
         var secretTool = new FakeSecretTool();
         var store = new SecretServiceStore(secretTool.Run);
-
         secretTool.Respond("clear", new(0, "", ""));
-        Assert.True(store.Delete(Key));
 
-        secretTool.Respond("clear", new(1, "", ""));
-        Assert.False(store.Delete(Key));
+        secretTool.Respond("search", new(0, "[/1]\nlabel = depinv\n", $"attribute.key = {Key}\n"));
+        Assert.True(store.Delete(Key));
+        Assert.Equal(["search", "--all", "key", Key], secretTool.Calls[0].Arguments);
+        Assert.Equal(["clear", "key", Key], secretTool.Calls[1].Arguments);
 
         secretTool.Respond("clear", new(1, "", "secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY\n"));
         Assert.Throws<CredentialStoreUnavailableException>(() => store.Delete(Key));
+    }
+
+    [Fact]
+    public void WithoutAnEntryDeleteIsFalseWhateverClearWouldSay()
+    {
+        var secretTool = new FakeSecretTool();
+        secretTool.Respond("clear", new(0, "", "")); // Some versions of secret-tool succeed when nothing matches.
+
+        Assert.False(new SecretServiceStore(secretTool.Run).Delete(Key));
+        Assert.DoesNotContain(secretTool.Calls, c => c.Arguments[0] == "clear");
+    }
+
+    [Fact]
+    public void AnUnreachableVaultIsReportedOnDelete()
+    {
+        var secretTool = new FakeSecretTool();
+        secretTool.Respond("search", new(1, "", "secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY\n"));
+
+        Assert.Throws<CredentialStoreUnavailableException>(() => new SecretServiceStore(secretTool.Run).Delete(Key));
     }
 
     [Fact]

@@ -253,15 +253,23 @@ public sealed class SecretServiceStore : ICredentialStore
             Clear([KeyAttribute, key, LoginAttribute, previous.Login]);
     }
 
-    public bool Delete(string key) => Clear([KeyAttribute, key]);
+    public bool Delete(string key)
+    {
+        // The exit code of clear says whether it ran, not whether an entry matched: search tells.
+        if (Run(["search", "--all", KeyAttribute, key], null).Output.Length == 0) return false;
+        Clear([KeyAttribute, key]);
+        return true;
+    }
 
-    /// <summary>secret-tool clear ends with 1 and says nothing when no entry matches.</summary>
-    private bool Clear(IReadOnlyList<string> attributes)
+    /// <summary>
+    /// Deletes the matching entries. Some versions of secret-tool end with 1, saying nothing, when none matches:
+    /// it is not an error.
+    /// </summary>
+    private void Clear(IReadOnlyList<string> attributes)
     {
         var result = _run(["clear", .. attributes], null);
-        if (result.ExitCode == 0) return true;
-        if (result.ExitCode == 1 && result.Error.Trim().Length == 0) return false;
-        throw Unavailable(result);
+        if (result.ExitCode != 0 && !(result.ExitCode == 1 && result.Error.Trim().Length == 0))
+            throw Unavailable(result);
     }
 
     private SecretToolResult Run(IReadOnlyList<string> arguments, string? input)
