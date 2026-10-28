@@ -11,7 +11,7 @@ internal sealed class FakePackageFeed : IPackageFeed
 
     private int _packageReads;
 
-    public string Origin => "https://pkgs.dev.azure.com/acme/_packaging/feed/nuget/v3/index.json";
+    public string Origin { get; init; } = "https://pkgs.dev.azure.com/acme/_packaging/feed/nuget/v3/index.json";
 
     /// <summary>Number of .nupkg files read.</summary>
     public int PackageReads => Volatile.Read(ref _packageReads);
