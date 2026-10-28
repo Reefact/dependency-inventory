@@ -166,5 +166,35 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(data["usageLegend"], [])
 
 
+class BranchTests(unittest.TestCase):
+    ROWS = [
+        {"Project": "p", "Repository": "api", "Branch": "release", "Package": "A"},
+        {"Project": "p", "Repository": "api", "Branch": "develop", "Package": "A"},
+        {"Project": "p", "Repository": "lib", "Branch": "release", "Package": "A"},
+    ]
+
+    def select(self, branches):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rows = build_chart.select_branches(self.ROWS, branches, Path("dependencies.csv"))
+        return [f"{r['Repository']} {r['Branch']}" for r in rows], err.getvalue()
+
+    def test_the_branch_filter_keeps_the_matching_branches(self):
+        self.assertEqual(self.select(["Release"]), (["api release", "lib release"], ""))
+        self.assertEqual(self.select(["rel*", "develop"])[0], ["api release", "api develop", "lib release"])
+
+    def test_several_branches_of_a_repository_are_reported_without_a_filter(self):
+        rows, warning = self.select([])
+        self.assertEqual(rows, ["api release", "api develop", "lib release"])
+        self.assertIn("1 repository has several branches in dependencies.csv (api)", warning)
+        self.assertIn("Pass --branch to keep one.", warning)
+
+    def test_a_single_branch_per_repository_needs_no_warning(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            build_chart.select_branches(self.ROWS[:1] + self.ROWS[2:], [], Path("dependencies.csv"))
+        self.assertEqual(err.getvalue(), "")
+
+
 if __name__ == "__main__":
     unittest.main()

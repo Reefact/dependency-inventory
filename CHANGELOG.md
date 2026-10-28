@@ -15,6 +15,11 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   (the highest match in natural order), and `@default` for the repository's default branch. `--branch-file` reads
   the list from a file, where `[repository]` sections give matching repositories their own list. The scan header
   prints the branches looked for.
+- **`--branch-mode all` inventories every listed branch of each repository**, instead of the first one that exists.
+  Each branch gets its own lines in the reports, told apart by their Branch and Commit columns; `repositories.csv`
+  has one line per repository and branch. It needs `--branch` or `--branch-file`; `--branch "*"` lists every branch.
+  Branches on the same commit are scanned once, and a file content already read on another branch is not downloaded
+  again.
 
 ### Changed
 
@@ -22,6 +27,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   or GitLab, instead of the first of main, release (or release/*), develop and dev, then the first branch in
   alphabetical order. Reports can therefore differ for the same command. The previous order, without its alphabetical
   fallback, is `--branch main --branch release --branch "release/*" --branch develop --branch dev`.
+- **`used-types.csv` gains the Branch and Commit columns**, after Repository, as in the other reports, so that the
+  types used on each branch can be told apart.
 - **A repository that has none of the requested branches is reported `NoBranch`** in `repositories.csv`, with the
   branches looked for, instead of being scanned on another branch.
 

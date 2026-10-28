@@ -10,7 +10,13 @@ public interface IScanProgress
 public sealed record RepositoryScanResult(
     RepositoryCoverage Coverage,
     IReadOnlyList<PackageOccurrence> Occurrences,
-    IReadOnlyList<TransitiveDependency>? TransitiveDependencies = null);
+    IReadOnlyList<TransitiveDependency>? TransitiveDependencies = null)
+{
+    /// <summary>The same scan, for another branch on the same commit.</summary>
+    public RepositoryScanResult OnBranch(string branch) => new(Coverage with { Branch = branch },
+        Occurrences.Select(o => o with { Branch = branch }).ToArray(),
+        TransitiveDependencies?.Select(t => t with { Branch = branch }).ToArray());
+}
 
 /// <summary>The scan of every repository; transitive dependencies only when they were resolved.</summary>
 public sealed record ScanResult(
@@ -77,12 +83,16 @@ public sealed record ScanParallelism
 /// <summary>One file of the selected commit: its parsed content, or the error that prevented reading it.</summary>
 internal sealed record FileRead<T>(string Path, int? ContentLength, T? Parsed, string? Error);
 
+/// <summary>What could be read on one branch; the tree lists every file of the commit, read or not.</summary>
+internal sealed record RepositoryRead<T>(GitBranch Branch, IReadOnlyList<FileRead<T>> Files,
+    IReadOnlyList<string> Tree);
+
 /// <summary>
-/// What could be read in one repository; no branch means none of the requested ones exists, for the reason given.
-/// The tree lists every file of the commit, read or not.
+/// The branches of one repository and those selected to be scanned; none selected means none of the requested ones
+/// exists, for the reason given.
 /// </summary>
-internal sealed record RepositoryRead<T>(GitBranch? Branch, IReadOnlyList<FileRead<T>> Files,
-    IReadOnlyList<string>? Tree = null, string? NoBranchReason = null);
+internal sealed record BranchSelection(IReadOnlyList<GitBranch> Available, IReadOnlyList<GitBranch> Selected,
+    string? NoBranchReason);
 
 /// <summary>
 /// The walk shared by every inventory: selected branch, tree of its commit, files read (possibly in parallel)
@@ -112,21 +122,50 @@ internal static class RepositoryWalker
     }
 
     /// <summary>
-    /// Reads and parses the files of the branch selected by <paramref name="branchPolicy"/> that
-    /// <paramref name="isInteresting"/> keeps. A file that cannot be read or parsed is returned with its error; a
-    /// branch or tree failure is thrown. <paramref name="branchesListed"/> is called as soon as the branch is
-    /// selected, before the tree is read.
+    /// The branches of the repository and those <paramref name="branchPolicy"/> selects: the first that exists, or
+    /// every one in <see cref="BranchMode.All"/>.
     /// </summary>
-    public static async Task<RepositoryRead<T>> ReadAsync<T>(IRepositoryProvider api, Repository repo,
-        BranchPolicy branchPolicy, Func<string, bool> isInteresting, Func<string, string, T> parse,
-        Action<IReadOnlyList<GitBranch>, GitBranch?> branchesListed, int fileParallelism, CancellationToken ct)
+    public static async Task<BranchSelection> SelectBranchesAsync(IRepositoryProvider api, Repository repo,
+        BranchPolicy branchPolicy, CancellationToken ct)
     {
         var branches = await api.GetBranchesAsync(repo.Id, ct);
         var (requested, section) = branchPolicy.For(repo.Name);
-        var branch = BranchSelector.Select(branches, requested, repo.DefaultBranch);
-        branchesListed(branches, branch);
-        if (branch is null) return new(null, [], null, NoBranchReason(branches, requested, section, repo));
+        IReadOnlyList<GitBranch> selected = branchPolicy.Mode == BranchMode.All
+            ? BranchSelector.SelectAll(branches, requested, repo.DefaultBranch)
+            : BranchSelector.Select(branches, requested, repo.DefaultBranch) is { } branch ? [branch] : [];
+        return new(branches, selected,
+            selected.Count == 0 ? NoBranchReason(branches, requested, section, repo) : null);
+    }
 
+    /// <summary>
+    /// Scans every selected branch, in order: a commit is scanned once, and <paramref name="retarget"/> gives its
+    /// result to the other branches on it. With several commits, a file content read on one commit is not read
+    /// again on another (<see cref="ContentReuseProvider"/>).
+    /// </summary>
+    public static async Task<IReadOnlyList<TResult>> ForEachBranchAsync<TResult>(IRepositoryProvider api,
+        BranchSelection selection, Func<IRepositoryProvider, GitBranch, Task<TResult>> scan,
+        Func<TResult, GitBranch, TResult> retarget)
+    {
+        var reader = selection.Selected.Select(b => b.ObjectId).Distinct(StringComparer.Ordinal).Count() > 1
+            ? new ContentReuseProvider(api) : api;
+        var scanned = new Dictionary<string, TResult>(StringComparer.Ordinal);
+        var results = new List<TResult>();
+        foreach (var branch in selection.Selected)
+        {
+            if (scanned.TryGetValue(branch.ObjectId, out var done)) results.Add(retarget(done, branch));
+            else results.Add(scanned[branch.ObjectId] = await scan(reader, branch));
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Reads and parses the files of <paramref name="branch"/> that <paramref name="isInteresting"/> keeps. A file
+    /// that cannot be read or parsed is returned with its error; a tree failure is thrown.
+    /// </summary>
+    public static async Task<RepositoryRead<T>> ReadAsync<T>(IRepositoryProvider api, Repository repo,
+        GitBranch branch, Func<string, bool> isInteresting, Func<string, string, T> parse, int fileParallelism,
+        CancellationToken ct)
+    {
         var tree = (await api.GetTreeAsync(repo.Id, branch.ObjectId, ct)).Where(x => !x.IsFolder)
             .Select(x => x.Path).ToArray();
         var paths = tree.Where(isInteresting).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -194,16 +233,10 @@ public static class RepositoryScanner
         ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct,
         PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null, BranchPolicy? branches = null)
     {
-        var results = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
-            async (repo, fileDegree, token) =>
-            {
-                var diagnostic = collectDiagnostics
-                    ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
-                    : null;
-                var scan = await ScanRepositoryAsync(api, repo, matcher, diagnostic, token, fileDegree, usage,
-                    transitive, branches);
-                return (Scan: scan, Diagnostic: diagnostic);
-            }, ct);
+        var perRepository = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
+            (repo, fileDegree, token) => ScanBranchesAsync(api, repo, matcher, collectDiagnostics, null, token,
+                fileDegree, usage, transitive, branches ?? BranchPolicy.RepositoryDefault), ct);
+        var results = perRepository.SelectMany(x => x).ToArray();
 
         return new ScanResult(
             results.SelectMany(x => x.Scan.Occurrences).ToArray(),
@@ -213,37 +246,90 @@ public static class RepositoryScanner
     }
 
     /// <summary>
-    /// Scans one repository on its selected branch. Failures are reported in the coverage,
-    /// never thrown, except cancellation.
+    /// Scans one repository on the first branch <paramref name="branches"/> selects. Failures are reported in the
+    /// coverage, never thrown, except cancellation.
     /// </summary>
     public static async Task<RepositoryScanResult> ScanRepositoryAsync(IRepositoryProvider api,
         Repository repo, DependencyMatcher matcher, RepositoryDiagnostic? diagnostic, CancellationToken ct,
         int fileParallelism = 1, PackageUsageAnalyzer? usage = null, TransitiveResolver? transitive = null,
-        BranchPolicy? branches = null)
+        BranchPolicy? branches = null) =>
+        (await ScanBranchesAsync(api, repo, matcher, false, diagnostic, ct, fileParallelism, usage, transitive,
+            (branches ?? BranchPolicy.RepositoryDefault).With(BranchMode.First)))[0].Scan;
+
+    /// <summary>
+    /// Scans one repository on every branch <paramref name="branches"/> selects, in order: one result per branch,
+    /// or a single one when no branch could be scanned. Each branch gets its own diagnostic, or
+    /// <paramref name="diagnostic"/> for the first. Failures are reported in the coverage, never thrown, except
+    /// cancellation.
+    /// </summary>
+    internal static async Task<IReadOnlyList<(RepositoryScanResult Scan, RepositoryDiagnostic? Diagnostic)>>
+        ScanBranchesAsync(IRepositoryProvider api, Repository repo, DependencyMatcher matcher,
+            bool collectDiagnostics, RepositoryDiagnostic? diagnostic, CancellationToken ct, int fileParallelism,
+            PackageUsageAnalyzer? usage, TransitiveResolver? transitive, BranchPolicy branches)
+    {
+        RepositoryDiagnostic? NewDiagnostic()
+        {
+            var created = diagnostic ?? (collectDiagnostics
+                ? new RepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
+                : null);
+            diagnostic = null;
+            return created;
+        }
+
+        if (repo.IsDisabled)
+            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), []),
+                NewDiagnostic())];
+
+        BranchSelection selection;
+        try { selection = await RepositoryWalker.SelectBranchesAsync(api, repo, branches, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.Failed, 0, 0, ex.Message), []),
+                NewDiagnostic())];
+        }
+
+        if (selection.Selected.Count == 0)
+        {
+            var none = NewDiagnostic();
+            none?.AvailableBranches.AddRange(selection.Available.Select(b => b.Name));
+            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, selection.NoBranchReason),
+                []), none)];
+        }
+
+        return await RepositoryWalker.ForEachBranchAsync<(RepositoryScanResult Scan, RepositoryDiagnostic? Diagnostic)>(
+            api, selection,
+            async (reader, branch) =>
+            {
+                var branchDiagnostic = NewDiagnostic();
+                if (branchDiagnostic is not null)
+                {
+                    branchDiagnostic.AvailableBranches.AddRange(selection.Available.Select(b => b.Name));
+                    branchDiagnostic.SelectedBranch = branch.Name;
+                    branchDiagnostic.Commit = branch.ObjectId;
+                }
+                return (await ScanCommitAsync(reader, repo, branch, matcher, branchDiagnostic, ct, fileParallelism,
+                    usage, transitive), branchDiagnostic);
+            },
+            (done, branch) => (done.Scan.OnBranch(branch.Name), done.Diagnostic?.OnBranch(branch.Name)));
+    }
+
+    /// <summary>
+    /// Scans the commit of one branch. Failures are reported in the coverage, never thrown, except cancellation.
+    /// </summary>
+    private static async Task<RepositoryScanResult> ScanCommitAsync(IRepositoryProvider api, Repository repo,
+        GitBranch branch, DependencyMatcher matcher, RepositoryDiagnostic? diagnostic, CancellationToken ct,
+        int fileParallelism, PackageUsageAnalyzer? usage, TransitiveResolver? transitive)
     {
         IReadOnlyList<PackageOccurrence> hits = [];
         IReadOnlyList<TransitiveDependency> transitiveDependencies = [];
-        if (repo.IsDisabled)
-            return new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), hits);
-
-        string? branchName = null;
+        var branchName = branch.Name;
         int filesRead = 0;
         var failures = new List<string>();
         try
         {
-            var read = await RepositoryWalker.ReadAsync(api, repo, branches ?? BranchPolicy.RepositoryDefault,
-                NuGetDependencyParser.IsInterestingFile,
-                MsBuildFile.Parse,
-                (branches, selected) =>
-                {
-                    branchName = selected?.Name;
-                    if (diagnostic is null) return;
-                    diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
-                    diagnostic.SelectedBranch = selected?.Name;
-                    diagnostic.Commit = selected?.ObjectId;
-                }, fileParallelism, ct);
-            if (read.Branch is not { } branch)
-                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, read.NoBranchReason), hits);
+            var read = await RepositoryWalker.ReadAsync(api, repo, branch, NuGetDependencyParser.IsInterestingFile,
+                MsBuildFile.Parse, fileParallelism, ct);
 
             // Git paths are case-sensitive: two paths differing only by case are two files.
             var msbuildFiles = new Dictionary<string, MsBuildFile>(StringComparer.Ordinal);
@@ -283,10 +369,10 @@ public static class RepositoryScanner
             // Every declared reference takes part in the graph, matching the filters or not; a lock file may list
             // packages even without any (implicit references of the SDK).
             if (transitive is not null)
-                transitiveDependencies = await transitive.ResolveAsync(api, repo, branch, read.Tree ?? [],
+                transitiveDependencies = await transitive.ResolveAsync(api, repo, branch, read.Tree,
                     msbuildFiles, matcher, diagnostic, fileParallelism, ct);
             if (usage is not null)
-                (hits, transitiveDependencies) = await AnalyzeUsageAsync(usage, api, repo, branch, read.Tree ?? [],
+                (hits, transitiveDependencies) = await AnalyzeUsageAsync(usage, api, repo, branch, read.Tree,
                     msbuildFiles, found, transitiveDependencies, diagnostic, fileParallelism, ct);
             var status = failures.Count > 0 ? CoverageStatus.Partial
                 : read.Files.Count == 0 ? CoverageStatus.NoNuGetFiles : CoverageStatus.OK;

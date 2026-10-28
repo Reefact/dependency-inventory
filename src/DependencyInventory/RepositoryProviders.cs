@@ -73,3 +73,53 @@ public sealed class AzureRepositoryProvider : IRepositoryProvider
 
     public void Dispose() => _api.Dispose();
 }
+
+/// <summary>
+/// Reads each file content once across the commits of one repository: a file whose content id, given by the tree,
+/// was already read is not downloaded again. Meant for the branches of one repository, then discarded; it does not
+/// own the provider it wraps.
+/// </summary>
+public sealed class ContentReuseProvider(IRepositoryProvider inner) : IRepositoryProvider
+{
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string Commit, string Path), string> _ids =
+        new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Task<string>>> _contents =
+        new(StringComparer.Ordinal);
+
+    public string Origin => inner.Origin;
+
+    public Task<IReadOnlyList<Repository>> GetRepositoriesAsync(CancellationToken ct) =>
+        inner.GetRepositoriesAsync(ct);
+
+    public Task<IReadOnlyList<GitBranch>> GetBranchesAsync(string repositoryId, CancellationToken ct) =>
+        inner.GetBranchesAsync(repositoryId, ct);
+
+    public async Task<IReadOnlyList<GitFile>> GetTreeAsync(string repositoryId, string commitId,
+        CancellationToken ct)
+    {
+        var tree = await inner.GetTreeAsync(repositoryId, commitId, ct);
+        foreach (var file in tree)
+            if (!file.IsFolder && file.ObjectId is { Length: > 0 } id) _ids[(commitId, file.Path)] = id;
+        return tree;
+    }
+
+    public async Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct)
+    {
+        if (!_ids.TryGetValue((commitId, path), out var id))
+            return await inner.GetFileAsync(repositoryId, commitId, path, ct);
+        var read = _contents.GetOrAdd(id, _ => new Lazy<Task<string>>(
+            () => inner.GetFileAsync(repositoryId, commitId, path, ct)));
+        try { return await read.Value; }
+        catch
+        {
+            // A failed or cancelled read is not kept: another commit may read the same content again.
+            _contents.TryRemove(new KeyValuePair<string, Lazy<Task<string>>>(id, read));
+            throw;
+        }
+    }
+
+    public string FileUrl(Repository repository, string commitId, string path) =>
+        inner.FileUrl(repository, commitId, path);
+
+    public void Dispose() { }
+}

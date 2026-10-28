@@ -26,7 +26,8 @@ public sealed record AzureOrigin(string Organization, string Project)
 public sealed record Repository(string Id, string Name, string Project, string WebUrl, bool IsDisabled,
     string? DefaultBranch = null);
 public sealed record GitBranch(string Name, string ObjectId);
-public sealed record GitFile(string Path, bool IsFolder);
+/// <summary>A file or folder of a commit; <paramref name="ObjectId"/> identifies its content, when known.</summary>
+public sealed record GitFile(string Path, bool IsFolder, string? ObjectId = null);
 // Enum names are written as-is in the CSV and JSON reports: renaming a member changes the output format.
 [JsonConverter(typeof(JsonStringEnumConverter<PackageKind>))]
 public enum PackageKind { Reference, CentralVersion }
