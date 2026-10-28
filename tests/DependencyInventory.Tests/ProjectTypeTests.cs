@@ -31,6 +31,10 @@ public sealed class ProjectTypeTests
     [InlineData("""<Project Sdk="Microsoft.NET.Sdk.Web" />""", "Application", "SDK Microsoft.NET.Sdk.Web")]
     [InlineData("""<Project Sdk="Microsoft.NET.Sdk.Worker" />""", "Application", "SDK Microsoft.NET.Sdk.Worker")]
     [InlineData("""<Project><Sdk Name="Microsoft.NET.Sdk.Web" /></Project>""", "Application", "SDK Microsoft.NET.Sdk.Web")]
+    [InlineData("""<Project Sdk="Aspire.AppHost.Sdk/9.0.0;Microsoft.NET.Sdk.Web" />""", "Application", "SDK Microsoft.NET.Sdk.Web")]
+    [InlineData("""<Project><Sdk Name="Other.Sdk" /><Sdk Name="Microsoft.NET.Sdk.Worker" Version="1.0" /></Project>""",
+        "Application", "SDK Microsoft.NET.Sdk.Worker")]
+    [InlineData("""<Project><Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk.Web" /></Project>""", "Application", "SDK Microsoft.NET.Sdk.Web")]
     [InlineData("""<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><AzureFunctionsVersion>v4</AzureFunctionsVersion></PropertyGroup></Project>""",
         "Application", "AzureFunctionsVersion is set")]
     [InlineData("""<Project><PropertyGroup><OutputType>Library</OutputType><ProjectTypeGuids>{349c5851-65df-11da-9384-00065b846f21};{fae04ec0-301f-11d3-bf4b-00c04f79efbc}</ProjectTypeGuids></PropertyGroup></Project>""",
@@ -79,6 +83,16 @@ public sealed class ProjectTypeTests
             Classify("/tests/Lib/Lib.csproj", "<Project><PropertyGroup><IsTestProject>false</IsTestProject><OutputType>Library</OutputType></PropertyGroup></Project>",
                 props, farther).Type);
         Assert.Equal(ProjectType.Application, Classify("/src/Func/Func.csproj", "<Project />", props, farther).Type);
+    }
+
+    [Fact]
+    public void AnInheritedTestFrameworkReferenceMakesATestWhateverIsTestProjectSays()
+    {
+        var props = ("/tests/Directory.Build.props",
+            """<Project><PropertyGroup><IsTestProject>false</IsTestProject></PropertyGroup><ItemGroup><PackageReference Include="xunit" Version="2.9.3" /></ItemGroup></Project>""");
+
+        Assert.Equal((ProjectType.Test, "References a test framework"), Rule(Classify("/tests/Unit/Unit.csproj",
+            "<Project><PropertyGroup><IsTestProject>false</IsTestProject></PropertyGroup></Project>", props)));
     }
 
     [Fact]

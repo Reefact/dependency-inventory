@@ -389,11 +389,11 @@ Every project file gets a ProjectType, written in dependencies.csv, transitive-d
 |---|---|
 | Test | IsTestProject is true, the project references Microsoft.NET.Test.Sdk, xunit, xunit.core, NUnit, nunit.framework, MSTest.TestFramework or Microsoft.VisualStudio.QualityTools.UnitTestFramework, or its legacy ProjectTypeGuids is a test project's |
 | Sample | a folder of its path is samples, sample, examples, example or demo |
-| Application | OutputType is Exe or WinExe, the SDK is Microsoft.NET.Sdk.Web, Microsoft.NET.Sdk.Worker or Microsoft.NET.Sdk.BlazorWebAssembly, AzureFunctionsVersion is set, or its legacy ProjectTypeGuids is a web application's |
+| Application | OutputType is Exe or WinExe, one of its SDKs is Microsoft.NET.Sdk.Web, Microsoft.NET.Sdk.Worker or Microsoft.NET.Sdk.BlazorWebAssembly, AzureFunctionsVersion is set, or its legacy ProjectTypeGuids is a web application's |
 | Library | any other readable project |
 | Unknown | the project file could not be read |
 
-OutputType, IsTestProject, AzureFunctionsVersion and the test framework references come from the project file, then from the nearest Directory.Build.props, the one MSBuild imports; a property of the project wins. A packages.config takes the type of the project file next to it. A reference declared in a file shared by several projects, such as Directory.Build.props, has no ProjectType. These rules are heuristics: with --diagnostics, diagnostics.json gives under Projects the rule that classified every project file.
+OutputType, IsTestProject, AzureFunctionsVersion and the test framework references come from the project file, then from the nearest Directory.Build.props, the one MSBuild imports; a property of the project wins, while a test framework referenced by that Directory.Build.props makes a test whatever IsTestProject says. A packages.config takes the type of the project file next to it. A reference declared in a file shared by several projects, such as Directory.Build.props, has no ProjectType. These rules are heuristics: with --diagnostics, diagnostics.json gives under Projects the rule that classified every project file.
 
 ### NuGet extraction
 
