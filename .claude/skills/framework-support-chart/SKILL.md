@@ -15,10 +15,11 @@ target framework, e.g. `2.0.1 (net9.0)`. Bars of a version whose framework is ou
 red; those whose support ends within a few months are striped orange; a legend gives the dates.
 
 When `dependencies.csv` has the `Usage` column (depinv 1.0.0-preview.5 and later), each bar also tells how many
-of its references the code actually uses: the solid start of the bar is used, the washed-out rest is declared
-but not used, a hatched grey part is undetermined, and the text after the bar reads `21 · 5 used`, or
-`not used` when none is. A `BuildOnly` reference (analyzer, build assets) counts as used. Without the column,
-the chart shows references only, as before.
+of its references are classified as used: those whose package's types the code references, and the `BuildOnly`
+ones (analyzers, build assets), which act on the build without any type in the code. The solid start of the bar
+is classified as used, the washed-out rest is declared but not used, a hatched grey part is undetermined, and the
+text after the bar reads `21 · 5 used`, or `not used` when none is. Without the column, the chart shows
+references only, as before.
 
 It reads two reports of `depinv` (this repository's tool) and needs nothing else, except Microsoft's
 public release metadata for the support dates.
@@ -26,8 +27,8 @@ public release metadata for the support dates.
 ## 1. Get the two reports
 
 - `dependencies.csv`: who uses which version. It comes from `depinv packages`, filtered on the packages to
-  chart. For the usage by the code, pass the feed that publishes them: without it, internal packages cannot be
-  read and their usage is `Undetermined`:
+  chart. To classify the usage of internal packages, pass the feed that publishes them: without it, they cannot
+  be read and their usage is `Undetermined`:
   ```
   depinv packages --provider azure --url "https://dev.azure.com/<organization>/<project>" --pattern "<glob>" --feed <feed>
   ```

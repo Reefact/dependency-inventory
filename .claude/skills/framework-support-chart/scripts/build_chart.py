@@ -6,7 +6,7 @@ Inputs are two reports of depinv: dependencies.csv (depinv packages) has one lin
 (not per project: a project file may declare a package twice under conditions, a shared .props file declares
 it for many projects), package-frameworks.csv (depinv feed) gives the frameworks each published version ships.
 When dependencies.csv has the Usage column (depinv 1.0.0-preview.5 and later), each bar also shows how many of
-its references the code actually uses.
+its references are classified as used: the code references the package's types, or the package is BuildOnly.
 Support dates of .NET (Core) come from Microsoft's release metadata; .NET Framework dates from the
 table below. Output: a self-contained HTML page (and a PNG with scripts/render_png.js).
 """
