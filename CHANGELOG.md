@@ -8,6 +8,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+## [1.0.0-preview.6] - 2026-10-28
+
 ### Fixed
 
 - **`depinv packages` downloads packages from Azure Artifacts feeds**, which respond to download requests with an
@@ -120,7 +122,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory --prerelease` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
-[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.5...HEAD
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.6...HEAD
+[1.0.0-preview.6]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.5...v1.0.0-preview.6
 [1.0.0-preview.5]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.4...v1.0.0-preview.5
 [1.0.0-preview.4]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.3...v1.0.0-preview.4
 [1.0.0-preview.3]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.2...v1.0.0-preview.3
