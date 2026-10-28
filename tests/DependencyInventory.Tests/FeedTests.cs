@@ -469,7 +469,9 @@ public sealed class FeedTests
             [
                 new("Stime.Core.Vnext.Missing", "", PackageStatus.NotFound, "Package not found in the feed"),
                 new("Stime.Core.Vnext.Messaging", "2.0.4", PackageStatus.OK, null, FrameworksFrom.Nuspec,
-                    new DateTimeOffset(2025, 3, 14, 9, 30, 0, TimeSpan.Zero), true, ["Release", "Prerelease"], metadata)
+                    // Written in UTC whatever the offset read from the feed.
+                    new DateTimeOffset(2025, 3, 14, 11, 30, 0, TimeSpan.FromHours(2)), true, ["Release", "Prerelease"],
+                    metadata)
             ]);
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         try
