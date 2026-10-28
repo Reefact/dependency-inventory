@@ -124,7 +124,10 @@ h1 { font-size: 19px; font-weight: 700; margin: 0 0 28px; text-wrap: balance; }
     color-mix(in srgb, var(--band) 55%, transparent);
 }
 .seg:last-child { border-radius: 0 3px 3px 0; }
-.value.unused { color: var(--unsupported); font-weight: 600; }
+.value.unused, .below.unused { color: var(--unsupported); font-weight: 600; }
+/* On a narrow screen, the usage text goes on its own line under the bar: the bars keep their width. */
+:root.usage { --value-w: 190px; }
+.below { display: none; }
 .bar:hover, .bar:focus-visible { filter: brightness(1.08); }
 .bar:focus-visible { box-shadow: 0 0 0 2px var(--ink); }
 .value {
@@ -177,6 +180,13 @@ td.num { text-align: right; }
 
 @media (max-width: 640px) {
   :root { --label-w: 150px; --value-w: 28px; --lib-pad: 6px; }
+  :root.usage { --value-w: 28px; }
+  .usage .row { height: 42px; align-items: start; padding-top: 4px; }
+  .usage .value .detail { display: none; }
+  .usage .below {
+    display: block; position: absolute; left: 0; top: 21px;
+    font-size: 10.5px; color: var(--ink-2); white-space: nowrap;
+  }
   .label { font-size: 10.5px; padding: 4px 6px; }
 }
 </style>
@@ -206,8 +216,9 @@ td.num { text-align: right; }
 const DATA = __CHART_DATA__;
 
 const T = DATA.text;
-// The text after each bar is longer with the usage ("21 · 5 used · 2 undetermined"): room is kept for it.
-if (DATA.usage) document.documentElement.style.setProperty("--value-w", "190px");
+// The text after each bar is longer with the usage ("21 · 5 used · 2 undetermined"): the stylesheet keeps room
+// for it, or moves it under the bar on a narrow screen.
+if (DATA.usage) document.documentElement.classList.add("usage");
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -299,10 +310,14 @@ DATA.packages.forEach(pkg => {
     bar.addEventListener("mouseleave", hideTip);
     bar.addEventListener("focus", e => showTip(e, lines));
     bar.addEventListener("blur", hideTip);
-    const value = el("span", "value" + (DATA.usage && !v.used && !v.undetermined ? " unused" : ""),
-      DATA.usage ? v.valueLabel : String(v.count));
+    const notUsed = DATA.usage && !v.used && !v.undetermined ? " unused" : "";
+    const value = el("span", "value" + notUsed, String(v.count));
     value.style.left = pct(v.count);
     track.append(bar, value);
+    if (DATA.usage) {
+      value.appendChild(el("span", "detail", " · " + v.usageLabel));
+      track.appendChild(el("span", "below" + notUsed, v.usageLabel));
+    }
     row.append(label, track);
     section.appendChild(row);
 

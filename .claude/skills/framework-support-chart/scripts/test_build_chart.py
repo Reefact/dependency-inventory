@@ -108,6 +108,13 @@ class ChartTests(unittest.TestCase):
 
 
 class UsageTests(unittest.TestCase):
+    def test_the_tooltip_says_how_many_references_are_classified_as_used(self):
+        text = dict(build_chart.TEXT["en"], lang="en")
+        self.assertEqual(build_chart.usage_fields({"used": 2, "unused": 2, "undetermined": 0}, 4, text)["usageLine"],
+                         "2 of 4 references are classified as used")
+        self.assertEqual(build_chart.usage_fields({"used": 1, "unused": 0, "undetermined": 0}, 1, text)["usageLine"],
+                         "1 of 1 reference is classified as used")
+
     def build(self, dependencies: str) -> dict:
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
@@ -139,6 +146,9 @@ class UsageTests(unittest.TestCase):
                          (2, 1, 1))
         self.assertEqual(versions["1.0.0"]["valueLabel"], "4 · 2 utilisées · 1 indéterminée")
         self.assertEqual(versions["2.0.0"]["valueLabel"], "1 · non utilisée")
+        self.assertEqual(versions["1.0.0"]["usageLabel"], "2 utilisées · 1 indéterminée")
+        self.assertEqual(versions["1.0.0"]["usageLine"], "2 références considérées comme utilisées sur 4")
+        self.assertEqual(versions["2.0.0"]["usageLine"], "0 référence considérée comme utilisée sur 1")
         self.assertEqual(data["packages"][0]["countLabel"], "5 références · 2 utilisées")
         self.assertEqual([item["usage"] for item in data["usageLegend"]], ["used", "unused", "undetermined"])
         self.assertTrue(data["usage"])
