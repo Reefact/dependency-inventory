@@ -5,12 +5,13 @@ namespace DependencyInventory;
 /// <summary>
 /// What a project file or a Directory.Build.props says about the kind of project: its SDK, OutputType,
 /// IsTestProject, AzureFunctionsVersion, the legacy ProjectTypeGuids and its test framework references. Conditions
-/// are not evaluated: the last value declared wins.
+/// are not evaluated: the last value declared wins. A property is null when the file does not declare it, and empty
+/// when the file declares it empty, which overrides an inherited value as in MSBuild.
 /// </summary>
-public sealed record ProjectTraits(IReadOnlyList<string> Sdks, string? OutputType, bool? IsTestProject,
-    bool AzureFunctions, IReadOnlyList<string> ProjectTypeGuids, bool ReferencesTestFramework)
+public sealed record ProjectTraits(IReadOnlyList<string> Sdks, string? OutputType, string? IsTestProject,
+    string? AzureFunctionsVersion, IReadOnlyList<string> ProjectTypeGuids, bool ReferencesTestFramework)
 {
-    public static readonly ProjectTraits None = new([], null, null, false, [], false);
+    public static readonly ProjectTraits None = new([], null, null, null, [], false);
 
     private static readonly string[] TestFrameworks =
         ["Microsoft.NET.Test.Sdk", "xunit", "xunit.core", "NUnit", "nunit.framework", "MSTest.TestFramework",
@@ -21,8 +22,7 @@ public sealed record ProjectTraits(IReadOnlyList<string> Sdks, string? OutputTyp
         var document = XDocument.Parse(xml);
         var root = document.Root;
         string? Last(string name) =>
-            document.Descendants().LastOrDefault(e => e.Name.LocalName == name)?.Value.Trim() is { Length: > 0 } v
-                ? v : null;
+            document.Descendants().LastOrDefault(e => e.Name.LocalName == name)?.Value.Trim();
 
         // Sdk="A;B/1.0", <Sdk Name="A" /> and <Import Sdk="A" />: every SDK, without its version.
         var sdks = new[] { root?.Attribute("Sdk")?.Value }
@@ -34,15 +34,13 @@ public sealed record ProjectTraits(IReadOnlyList<string> Sdks, string? OutputTyp
             .Where(sdk => sdk.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var isTest = Last("IsTestProject") is { } test ? test.Equals("true", StringComparison.OrdinalIgnoreCase)
-            : (bool?)null;
         var guids = (Last("ProjectTypeGuids") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries |
             StringSplitOptions.TrimEntries).Select(g => g.Trim('{', '}').ToUpperInvariant()).ToArray();
         var referencesTests = document.Descendants()
             .Where(e => e.Name.LocalName is "PackageReference" or "package" or "Reference")
             .Select(e => (e.Attribute("Include") ?? e.Attribute("id"))?.Value.Split(',')[0].Trim())
             .Any(id => id is not null && TestFrameworks.Contains(id, StringComparer.OrdinalIgnoreCase));
-        return new(sdks, Last("OutputType"), isTest, Last("AzureFunctionsVersion") is not null, guids,
+        return new(sdks, Last("OutputType"), Last("IsTestProject"), Last("AzureFunctionsVersion"), guids,
             referencesTests);
     }
 }
@@ -82,8 +80,12 @@ public static class ProjectClassifier
             .Select(f => f.Value)
             .FirstOrDefault() ?? ProjectTraits.None;
 
+        // A property of the project, even empty, replaces the one of Directory.Build.props.
         var isTest = own.IsTestProject ?? props.IsTestProject;
-        if (isTest == true) return new(projectFile, ProjectType.Test, "IsTestProject is true");
+        var outputType = own.OutputType ?? props.OutputType;
+        var functions = own.AzureFunctionsVersion ?? props.AzureFunctionsVersion;
+        if ("true".Equals(isTest, StringComparison.OrdinalIgnoreCase))
+            return new(projectFile, ProjectType.Test, "IsTestProject is true");
         // An inherited reference stays a reference whatever IsTestProject says.
         if (own.ReferencesTestFramework || props.ReferencesTestFramework)
             return new(projectFile, ProjectType.Test, "References a test framework");
@@ -94,20 +96,19 @@ public static class ProjectClassifier
         if (folders.FirstOrDefault(f => SampleFolders.Contains(f, StringComparer.OrdinalIgnoreCase)) is { } sample)
             return new(projectFile, ProjectType.Sample, $"In the {sample} folder");
 
-        var outputType = own.OutputType ?? props.OutputType;
         if (outputType is { } output &&
             (output.Equals("Exe", StringComparison.OrdinalIgnoreCase) ||
              output.Equals("WinExe", StringComparison.OrdinalIgnoreCase)))
             return new(projectFile, ProjectType.Application, $"OutputType is {output}");
         if (own.Sdks.FirstOrDefault(s => ApplicationSdks.Contains(s, StringComparer.OrdinalIgnoreCase)) is { } sdk)
             return new(projectFile, ProjectType.Application, $"SDK {sdk}");
-        if (own.AzureFunctions || props.AzureFunctions)
+        if (!string.IsNullOrEmpty(functions))
             return new(projectFile, ProjectType.Application, "AzureFunctionsVersion is set");
         if (own.ProjectTypeGuids.Contains(WebApplicationGuid))
             return new(projectFile, ProjectType.Application, "Legacy web application (ProjectTypeGuids)");
 
         return new(projectFile, ProjectType.Library,
-            outputType is null ? "No OutputType" : $"OutputType is {outputType}");
+            string.IsNullOrEmpty(outputType) ? "No OutputType" : $"OutputType is {outputType}");
     }
 
     /// <summary>

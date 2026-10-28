@@ -393,7 +393,7 @@ Every project file gets a ProjectType, written in dependencies.csv, transitive-d
 | Library | any other readable project |
 | Unknown | the project file could not be read |
 
-OutputType, IsTestProject, AzureFunctionsVersion and the test framework references come from the project file, then from the nearest Directory.Build.props, the one MSBuild imports; a property of the project wins, while a test framework referenced by that Directory.Build.props makes a test whatever IsTestProject says. A packages.config takes the type of the project file next to it. A reference declared in a file shared by several projects, such as Directory.Build.props, has no ProjectType. These rules are heuristics: with --diagnostics, diagnostics.json gives under Projects the rule that classified every project file.
+OutputType, IsTestProject, AzureFunctionsVersion and the test framework references come from the project file, then from the nearest Directory.Build.props, the one MSBuild imports; a property of the project wins, even declared empty, while a test framework referenced by that Directory.Build.props makes a test whatever IsTestProject says. A packages.config takes the type of the project file next to it. A reference declared in a file shared by several projects, such as Directory.Build.props, has no ProjectType. These rules are heuristics: with --diagnostics, diagnostics.json gives under Projects the rule that classified every project file.
 
 ### NuGet extraction
 

@@ -95,6 +95,20 @@ public sealed class ProjectTypeTests
             "<Project><PropertyGroup><IsTestProject>false</IsTestProject></PropertyGroup></Project>", props)));
     }
 
+    [Theory]
+    [InlineData("<OutputType>Exe</OutputType>", "<OutputType></OutputType>")]
+    [InlineData("<AzureFunctionsVersion>v4</AzureFunctionsVersion>", "<AzureFunctionsVersion />")]
+    [InlineData("<IsTestProject>true</IsTestProject>", "<IsTestProject></IsTestProject>")]
+    public void AnInheritedPropertyEmptiedByTheProjectNoLongerApplies(string inherited, string emptied)
+    {
+        var props = ("/src/Directory.Build.props", $"<Project><PropertyGroup>{inherited}</PropertyGroup></Project>");
+
+        Assert.Equal((ProjectType.Library, "No OutputType"), Rule(Classify("/src/Lib/Lib.csproj",
+            $"""<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>{emptied}</PropertyGroup></Project>""", props)));
+        Assert.NotEqual(ProjectType.Library, Classify("/src/App/App.csproj", """<Project Sdk="Microsoft.NET.Sdk" />""",
+            props).Type);
+    }
+
     [Fact]
     public void AnUnreadableProjectIsUnknown() =>
         Assert.Equal(ProjectType.Unknown, ProjectClassifier.Classify("/src/Api.csproj",
