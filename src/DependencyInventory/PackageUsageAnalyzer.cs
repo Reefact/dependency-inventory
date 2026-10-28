@@ -8,13 +8,14 @@ public sealed record MsBuildFile(
     IReadOnlyList<ParsedPackage> Packages,
     ProjectImports Imports,
     DeclaredFrameworks Frameworks,
-    bool TransitivePinning = false)
+    bool? TransitivePinning = null)
 {
     public static MsBuildFile Parse(string path, string xml) =>
         new(NuGetDependencyParser.Parse(path, xml), ProjectImports.Parse(xml), FrameworkParser.Parse(path, xml),
             System.Xml.Linq.XDocument.Parse(xml).Descendants()
-                .Any(e => e.Name.LocalName == "CentralPackageTransitivePinningEnabled" &&
-                    e.Value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)));
+                .LastOrDefault(e => e.Name.LocalName == "CentralPackageTransitivePinningEnabled") is { } pinning
+                ? pinning.Value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)
+                : null);
 }
 
 /// <summary>How the usage of one reference was decided, written to diagnostics.json with --diagnostics.</summary>
@@ -81,7 +82,7 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
         var projectFiles = files.Keys.Where(NuGetDependencyParser.IsProjectFile).Order(StringComparer.Ordinal).ToArray();
         var targets = occurrences.Where(o => o.Kind == PackageKind.Reference).Select(o => o.File)
             .Distinct(StringComparer.Ordinal)
-            .ToDictionary(file => file, file => TargetProjects(file, projectFiles), StringComparer.Ordinal);
+            .ToDictionary(file => file, file => TargetProjects(file, projectFiles, files.Keys), StringComparer.Ordinal);
         var projects = await ReadProjectsAsync(api, repo, commit, tree, files, projectFiles,
             targets.Values.SelectMany(t => t).Where(IsCSharp).ToHashSet(StringComparer.Ordinal), fileParallelism, ct);
 
@@ -123,7 +124,7 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
 
         var resolution = await catalog.ResolveAsync(occurrence.Package, range, ct);
         if (resolution.Content is not { } content) return (Undetermined(resolution.Error ?? "Package not read."), resolution);
-        if (targets.Count == 0) return (Undetermined("No project file in this file's folder."), resolution);
+        if (targets.Count == 0) return (Undetermined("No project imports this file: none under its folder, or a nearer one of the same name shadows it."), resolution);
 
         var analyzedProjects = targets.Where(projects.ContainsKey).Select(p => projects[p]).ToArray();
         var surface = await SurfaceAsync(content, analyzedProjects.SelectMany(p => p.Frameworks).ToArray(), 0, ct);
@@ -235,14 +236,27 @@ public sealed class PackageUsageAnalyzer(PackageCatalog catalog, bool listUsedTy
 
     internal static string Folder(string path) => path[..(path.LastIndexOf('/') + 1)];
 
+    // MSBuild imports the nearest of each of these files only: a nearer one shadows those above it.
+    private static readonly string[] AutoImported =
+        ["/Directory.Build.props", "/Directory.Build.targets", "/Directory.Packages.props"];
+
     /// <summary>
     /// The projects a reference applies to: the project file itself, otherwise (Directory.Build.props, packages.config,
-    /// any imported file) every project under its folder.
+    /// any imported file) every project under its folder; for a file MSBuild imports automatically, only the projects
+    /// for which it is the nearest of its name.
     /// </summary>
-    internal static IReadOnlyList<string> TargetProjects(string file, IReadOnlyList<string> projectFiles) =>
-        NuGetDependencyParser.IsProjectFile(file)
-            ? [file]
-            : projectFiles.Where(p => p.StartsWith(Folder(file), StringComparison.Ordinal)).ToArray();
+    internal static IReadOnlyList<string> TargetProjects(string file, IReadOnlyList<string> projectFiles,
+        IEnumerable<string> files)
+    {
+        if (NuGetDependencyParser.IsProjectFile(file)) return [file];
+        var under = projectFiles.Where(p => p.StartsWith(Folder(file), StringComparison.Ordinal));
+        var name = AutoImported.FirstOrDefault(n => file.EndsWith(n, StringComparison.OrdinalIgnoreCase));
+        if (name is null) return under.ToArray();
+        var sameName = files.Where(f => f.EndsWith(name, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return under.Where(p => sameName.Where(f => p.StartsWith(Folder(f), StringComparison.Ordinal))
+                .MaxBy(f => f.Length) == file)
+            .ToArray();
+    }
 
     /// <summary>
     /// Reads and parses the C# files of the given projects. A file belongs to the project of the nearest folder above

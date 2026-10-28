@@ -195,7 +195,8 @@ How the usage is decided:
   project defines are unknown: a package only referenced there is Undetermined, never Used. Code never compiled
   (#if false) is ignored.
 - A reference declared in a Directory.Build.props, packages.config or another imported file applies to every project
-  under its folder.
+  under its folder; for Directory.Build.props, Directory.Build.targets and Directory.Packages.props, which MSBuild
+  imports automatically, only to the projects for which it is the nearest of its name.
 - A package without assemblies of its own, such as xunit, brings the types of its dependencies, for the target
   frameworks of the project.
 - The version read is the one NuGet restores: the lowest version published in the sources that satisfies the declared
@@ -230,11 +231,12 @@ declared references only.
 - Resolution says how the graph was found:
   - LockFile: the packages.lock.json next to the project, read as is; it holds the exact resolution of each framework.
   - Computed: otherwise, from the .nuspec of the packages, read from the same sources as the usage (--feed, then
-    nuget.org), following the NuGet rules without restore. A declared reference always wins; otherwise the nearest
-    level wins, and among the ranges of one level the one with the highest minimum; each range gives the lowest
-    published version satisfying it; the dependency group nearest to the framework applies, an empty group meaning no
-    dependency. With CentralPackageTransitivePinningEnabled, the central versions of Directory.Packages.props apply to
-    transitive packages too.
+    nuget.org), following the NuGet rules without restore. A declared reference always wins; any other package takes,
+    among the ranges all the packages of the graph ask for it, the one with the highest minimum, whatever their depth
+    (NuGet's cousin dependencies); each range gives the lowest published version satisfying it; the dependency group
+    nearest to the framework applies, an empty group meaning no dependency. With CentralPackageTransitivePinningEnabled
+    (the project's value wins over those of Directory.Packages.props and Directory.Build.props), the central versions of
+    Directory.Packages.props apply to transitive packages too. Via is the shortest path to the package.
 - Usage, Source and Feed follow the rules of [Package usage](#-package-usage). Usage tells whether the code uses a
   package it does not declare: such a project breaks the day the package that brings it stops depending on it.
 

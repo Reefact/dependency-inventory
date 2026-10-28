@@ -266,8 +266,9 @@ public static class RepositoryScanner
                     matchedFilters, api.FileUrl(repo, branch.ObjectId, file.Key)));
             }
             hits = found;
-            // Every declared reference takes part in the graph, matching the filters or not.
-            if (transitive is not null && parsedFiles.Values.Any(f => f.Any(p => p.Kind == PackageKind.Reference)))
+            // Every declared reference takes part in the graph, matching the filters or not; a lock file may list
+            // packages even without any (implicit references of the SDK).
+            if (transitive is not null)
                 transitiveDependencies = await transitive.ResolveAsync(api, repo, branch, read.Tree ?? [],
                     msbuildFiles, matcher, diagnostic, fileParallelism, ct);
             if (usage is not null)

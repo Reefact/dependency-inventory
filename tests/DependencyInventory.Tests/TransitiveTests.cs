@@ -7,7 +7,7 @@ public sealed class TransitiveTests
     /// <summary>
     /// A depends on B (a range whose minimum is not published), C, and Legacy for net462 only; B depends back on A;
     /// C depends on D, declared by the project, on F, and on a package found nowhere; F asks for E 3.0.0, deeper than
-    /// B's E 1.0.0.
+    /// B's E 1.0.0, on another branch.
     /// </summary>
     private static FakePackageFeed NuGetOrg() => new FakePackageFeed { Origin = "https://api.nuget.org/v3/index.json" }
         .Package("A", "1.0.0", """
@@ -27,6 +27,7 @@ public sealed class TransitiveTests
         .Package("F", "1.0.0", """<dependency id="E" version="3.0.0" />""")
         .Package("E", "1.0.0", types: "namespace Contoso.E { public class Thing { } }")
         .Package("E", "3.0.0", types: "namespace Contoso.E { public class Thing { } }")
+        .Package("E", "4.0.0", types: "namespace Contoso.E { public class Thing { } }")
         .Package("Legacy", "1.0.0");
 
     private static PackageCatalog Catalog(FakePackageFeed? feed = null) =>
@@ -60,20 +61,21 @@ public sealed class TransitiveTests
         .Select(t => $"{t.Framework} {t.Package} {t.Version} {t.Via} {t.Resolution}").ToArray();
 
     [Fact]
-    public async Task TheGraphIsComputedLevelByLevelFollowingTheNuGetRules()
+    public async Task TheGraphIsComputedFollowingTheNuGetRules()
     {
         var (result, _) = await ScanAsync(new()
         {
             ["/App/App.csproj"] = Project("net8.0", "A@1.0.0", "D@1.0.0")
         });
 
-        // B: the lowest version satisfying [1.0.0, ); D: declared, so never transitive; E: the nearest level wins
-        // over F's 3.0.0; A: the cycle stops; Legacy: net462 only.
+        // B: the lowest version satisfying [1.0.0, ); D: declared, so it wins over C's 2.0.0 and is never transitive;
+        // E: cousin dependencies, the highest minimum wins whatever the depth, reached by its shortest path;
+        // A: the cycle stops; Legacy: net462 only.
         Assert.Equal(
         [
             "net8.0 B 1.2.0 A > B Computed",
             "net8.0 C 1.0.0 A > C Computed",
-            "net8.0 E 1.0.0 A > B > E Computed",
+            "net8.0 E 3.0.0 A > B > E Computed",
             "net8.0 F 1.0.0 A > C > F Computed"
         ], Rows(result));
     }
@@ -142,14 +144,83 @@ public sealed class TransitiveTests
                   </PropertyGroup>
                   <ItemGroup>
                     <PackageVersion Include="A" Version="1.0.0" />
-                    <PackageVersion Include="E" Version="3.0.0" />
+                    <PackageVersion Include="E" Version="4.0.0" />
                   </ItemGroup>
                 </Project>
                 """,
             ["/App/App.csproj"] = Project("net8.0", "A")
         });
 
+        Assert.Contains("net8.0 E 4.0.0 A > B > E Computed", Rows(result));
+    }
+
+    [Fact]
+    public async Task AProjectCanDisableTheTransitivePinningItInherits()
+    {
+        var (result, _) = await ScanAsync(new()
+        {
+            ["/Directory.Packages.props"] = """
+                <Project>
+                  <PropertyGroup>
+                    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+                  </PropertyGroup>
+                  <ItemGroup>
+                    <PackageVersion Include="A" Version="1.0.0" /><PackageVersion Include="E" Version="4.0.0" />
+                  </ItemGroup>
+                </Project>
+                """,
+            ["/App/App.csproj"] = """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <TargetFramework>net8.0</TargetFramework>
+                    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+                  </PropertyGroup>
+                  <ItemGroup><PackageReference Include="A" /></ItemGroup>
+                </Project>
+                """
+        });
+
         Assert.Contains("net8.0 E 3.0.0 A > B > E Computed", Rows(result));
+    }
+
+    [Fact]
+    public async Task ANearerDirectoryBuildPropsShadowsTheReferencesOfThoseAboveIt()
+    {
+        var (result, _) = await ScanAsync(new()
+        {
+            ["/Directory.Build.props"] =
+                """<Project><ItemGroup><PackageReference Include="E" Version="1.0.0" /></ItemGroup></Project>""",
+            ["/src/Directory.Build.props"] = "<Project />",
+            ["/src/App/App.csproj"] = Project("net8.0", "A@1.0.0", "D@1.0.0")
+        });
+
+        // E is not declared for App: it is reached through A.
+        Assert.Contains("net8.0 E 3.0.0 A > B > E Computed", Rows(result));
+    }
+
+    [Fact]
+    public async Task ALockFileIsReadEvenWithoutAnyDeclaredReference()
+    {
+        var (result, _) = await ScanAsync(new()
+        {
+            ["/App/App.csproj"] = Project("netstandard2.0"),
+            ["/App/packages.lock.json"] = """
+                {
+                  "version": 1,
+                  "dependencies": {
+                    ".NETStandard,Version=v2.0": {
+                      "NETStandard.Library": { "type": "Direct", "resolved": "2.0.3",
+                        "dependencies": { "Microsoft.NETCore.Platforms": "1.1.0" } },
+                      "Microsoft.NETCore.Platforms": { "type": "Transitive", "resolved": "1.1.0" }
+                    }
+                  }
+                }
+                """
+        }, catalog: new PackageCatalog([]));
+
+        Assert.Equal(
+            ["netstandard2.0 Microsoft.NETCore.Platforms 1.1.0 NETStandard.Library > Microsoft.NETCore.Platforms LockFile"],
+            Rows(result));
     }
 
     [Fact]
@@ -165,7 +236,7 @@ public sealed class TransitiveTests
             ["/App/App.csproj"] = Project("net8.0", "A")
         });
 
-        Assert.Contains("net8.0 E 1.0.0 A > B > E Computed", Rows(result));
+        Assert.Contains("net8.0 E 3.0.0 A > B > E Computed", Rows(result));
     }
 
     [Fact]
@@ -225,7 +296,7 @@ public sealed class TransitiveTests
         }, pattern: "E");
 
         Assert.Empty(result.Occurrences);
-        Assert.Equal(["net8.0 E 1.0.0 A > B > E Computed"], Rows(result));
+        Assert.Equal(["net8.0 E 3.0.0 A > B > E Computed"], Rows(result));
     }
 
     [Fact]
