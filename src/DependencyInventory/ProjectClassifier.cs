@@ -7,10 +7,10 @@ namespace DependencyInventory;
 /// IsTestProject, AzureFunctionsVersion, the legacy ProjectTypeGuids and its test framework references. Conditions
 /// are not evaluated: the last value declared wins.
 /// </summary>
-public sealed record ProjectTraits(string? Sdk, string? OutputType, bool? IsTestProject, bool AzureFunctions,
-    IReadOnlyList<string> ProjectTypeGuids, bool ReferencesTestFramework)
+public sealed record ProjectTraits(IReadOnlyList<string> Sdks, string? OutputType, bool? IsTestProject,
+    bool AzureFunctions, IReadOnlyList<string> ProjectTypeGuids, bool ReferencesTestFramework)
 {
-    public static readonly ProjectTraits None = new(null, null, null, false, [], false);
+    public static readonly ProjectTraits None = new([], null, null, false, [], false);
 
     private static readonly string[] TestFrameworks =
         ["Microsoft.NET.Test.Sdk", "xunit", "xunit.core", "NUnit", "nunit.framework", "MSTest.TestFramework",
@@ -24,8 +24,16 @@ public sealed record ProjectTraits(string? Sdk, string? OutputType, bool? IsTest
             document.Descendants().LastOrDefault(e => e.Name.LocalName == name)?.Value.Trim() is { Length: > 0 } v
                 ? v : null;
 
-        var sdk = root?.Attribute("Sdk")?.Value.Trim() is { Length: > 0 } attribute ? attribute
-            : document.Descendants().FirstOrDefault(e => e.Name.LocalName == "Sdk")?.Attribute("Name")?.Value.Trim();
+        // Sdk="A;B/1.0", <Sdk Name="A" /> and <Import Sdk="A" />: every SDK, without its version.
+        var sdks = new[] { root?.Attribute("Sdk")?.Value }
+            .Concat(document.Descendants().Where(e => e.Name.LocalName == "Sdk").Select(e => e.Attribute("Name")?.Value))
+            .Concat(document.Descendants().Where(e => e.Name.LocalName == "Import").Select(e => e.Attribute("Sdk")?.Value))
+            .SelectMany(value => (value ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries |
+                StringSplitOptions.TrimEntries))
+            .Select(sdk => sdk.Split('/')[0].Trim())
+            .Where(sdk => sdk.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var isTest = Last("IsTestProject") is { } test ? test.Equals("true", StringComparison.OrdinalIgnoreCase)
             : (bool?)null;
         var guids = (Last("ProjectTypeGuids") ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries |
@@ -34,7 +42,7 @@ public sealed record ProjectTraits(string? Sdk, string? OutputType, bool? IsTest
             .Where(e => e.Name.LocalName is "PackageReference" or "package" or "Reference")
             .Select(e => (e.Attribute("Include") ?? e.Attribute("id"))?.Value.Split(',')[0].Trim())
             .Any(id => id is not null && TestFrameworks.Contains(id, StringComparer.OrdinalIgnoreCase));
-        return new(sdk, Last("OutputType"), isTest, Last("AzureFunctionsVersion") is not null, guids,
+        return new(sdks, Last("OutputType"), isTest, Last("AzureFunctionsVersion") is not null, guids,
             referencesTests);
     }
 }
@@ -76,7 +84,8 @@ public static class ProjectClassifier
 
         var isTest = own.IsTestProject ?? props.IsTestProject;
         if (isTest == true) return new(projectFile, ProjectType.Test, "IsTestProject is true");
-        if (own.ReferencesTestFramework || (isTest is null && props.ReferencesTestFramework))
+        // An inherited reference stays a reference whatever IsTestProject says.
+        if (own.ReferencesTestFramework || props.ReferencesTestFramework)
             return new(projectFile, ProjectType.Test, "References a test framework");
         if (own.ProjectTypeGuids.Contains(TestProjectGuid))
             return new(projectFile, ProjectType.Test, "Legacy test project (ProjectTypeGuids)");
@@ -90,7 +99,7 @@ public static class ProjectClassifier
             (output.Equals("Exe", StringComparison.OrdinalIgnoreCase) ||
              output.Equals("WinExe", StringComparison.OrdinalIgnoreCase)))
             return new(projectFile, ProjectType.Application, $"OutputType is {output}");
-        if (own.Sdk is { } sdk && ApplicationSdks.Contains(sdk, StringComparer.OrdinalIgnoreCase))
+        if (own.Sdks.FirstOrDefault(s => ApplicationSdks.Contains(s, StringComparer.OrdinalIgnoreCase)) is { } sdk)
             return new(projectFile, ProjectType.Application, $"SDK {sdk}");
         if (own.AzureFunctions || props.AzureFunctions)
             return new(projectFile, ProjectType.Application, "AzureFunctionsVersion is set");
