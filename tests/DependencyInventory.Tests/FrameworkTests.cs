@@ -258,7 +258,7 @@ public sealed class FrameworkTests
         var report = new FrameworkReport(DateTimeOffset.UnixEpoch, "https://dev.azure.com/acme/project",
             [
                 new("project", "api", "main", "abc", "/src/Api.csproj", "net8.0", FrameworkSource.DirectoryBuildProps,
-                    "https://example/api"),
+                    "https://example/api", ProjectType.Application),
                 new("project", "api", "main", "abc", "/src/Lib.csproj", null, FrameworkSource.Unresolved,
                     "https://example/lib")
             ],
@@ -271,9 +271,9 @@ public sealed class FrameworkTests
             var frameworks = await File.ReadAllLinesAsync(Path.Combine(directory, "frameworks.csv"));
             Assert.Equal(
             [
-                "Project;Repository;Branch;Commit;ProjectFile;Framework;FrameworkSource;Url",
-                "project;api;main;abc;/src/Api.csproj;net8.0;DirectoryBuildProps;https://example/api",
-                "project;api;main;abc;/src/Lib.csproj;;Unresolved;https://example/lib"
+                "Project;Repository;Branch;Commit;ProjectFile;Framework;FrameworkSource;Url;ProjectType",
+                "project;api;main;abc;/src/Api.csproj;net8.0;DirectoryBuildProps;https://example/api;Application",
+                "project;api;main;abc;/src/Lib.csproj;;Unresolved;https://example/lib;"
             ], frameworks);
             var repositories = await File.ReadAllLinesAsync(Path.Combine(directory, "repositories.csv"));
             Assert.Equal("Project;Repository;Branch;Status;FilesExamined;Projects;Details", repositories[0]);

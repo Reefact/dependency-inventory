@@ -260,6 +260,18 @@ def select_branches(rows: list[dict], branches: list[str], source: Path) -> list
     return rows
 
 
+def select_project_types(rows: list[dict], types: list[str], source: Path) -> list[dict]:
+    """The rows of projects of one of the types; all rows without any. A reference declared in a shared file has no
+    type and is left out by the filter."""
+    if not types:
+        return rows
+    if rows and "ProjectType" not in rows[0]:
+        sys.exit(f"{source} has no ProjectType column: --project-type needs a report of depinv 1.0.0-preview.8 "
+                 "or later.")
+    wanted = {t.lower() for t in types}
+    return [r for r in rows if (r.get("ProjectType") or "").lower() in wanted]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dependencies", type=Path, required=True, help="dependencies.csv of depinv packages")
@@ -271,6 +283,9 @@ def main() -> None:
     parser.add_argument("--branch", action="append", default=[],
                         help="only the references of the branches matching this glob (repeatable): a report of "
                              "depinv packages --branch-mode all lists every branch")
+    parser.add_argument("--project-type", action="append", default=[],
+                        help="only the references of projects of this type (repeatable): Application, Library, "
+                             "Test, Sample or Unknown, from the ProjectType column of depinv 1.0.0-preview.8 and later")
     parser.add_argument("--lang", choices=sorted(TEXT), default="en", help="language of the chart texts")
     parser.add_argument("--as-of", type=dt.date.fromisoformat, default=dt.date.today(),
                         help="date of the support status, YYYY-MM-DD; today by default")
@@ -295,6 +310,7 @@ def main() -> None:
     unresolved = 0
     dependency_rows = read_csv(args.dependencies)
     dependency_rows = select_branches(dependency_rows, args.branch, args.dependencies)
+    dependency_rows = select_project_types(dependency_rows, args.project_type, args.dependencies)
     # Reports of depinv before 1.0.0-preview.5 have no Usage column: the chart then shows references only.
     has_usage = bool(dependency_rows) and "Usage" in dependency_rows[0]
     for row in dependency_rows:

@@ -8,14 +8,16 @@ public sealed record MsBuildFile(
     IReadOnlyList<ParsedPackage> Packages,
     ProjectImports Imports,
     DeclaredFrameworks Frameworks,
-    bool? TransitivePinning = null)
+    bool? TransitivePinning = null,
+    ProjectTraits? Traits = null)
 {
     public static MsBuildFile Parse(string path, string xml) =>
         new(NuGetDependencyParser.Parse(path, xml), ProjectImports.Parse(xml), FrameworkParser.Parse(path, xml),
             System.Xml.Linq.XDocument.Parse(xml).Descendants()
                 .LastOrDefault(e => e.Name.LocalName == "CentralPackageTransitivePinningEnabled") is { } pinning
                 ? pinning.Value.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)
-                : null);
+                : null,
+            ProjectTraits.Parse(xml));
 }
 
 /// <summary>How the usage of one reference was decided, written to diagnostics.json with --diagnostics.</summary>

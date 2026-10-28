@@ -196,5 +196,23 @@ class BranchTests(unittest.TestCase):
         self.assertEqual(err.getvalue(), "")
 
 
+class ProjectTypeTests(unittest.TestCase):
+    ROWS = [
+        {"Repository": "api", "File": "/src/Api.csproj", "ProjectType": "Application"},
+        {"Repository": "api", "File": "/tests/Api.Tests.csproj", "ProjectType": "Test"},
+        {"Repository": "api", "File": "/Directory.Build.props", "ProjectType": ""},
+    ]
+
+    def test_the_filter_keeps_the_projects_of_the_types(self):
+        rows = build_chart.select_project_types(self.ROWS, ["application"], Path("dependencies.csv"))
+        self.assertEqual([r["File"] for r in rows], ["/src/Api.csproj"])
+        self.assertEqual(build_chart.select_project_types(self.ROWS, [], Path("dependencies.csv")), self.ROWS)
+
+    def test_a_report_without_project_types_cannot_be_filtered(self):
+        with self.assertRaises(SystemExit) as raised:
+            build_chart.select_project_types([{"Repository": "api"}], ["Application"], Path("dependencies.csv"))
+        self.assertIn("has no ProjectType column", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

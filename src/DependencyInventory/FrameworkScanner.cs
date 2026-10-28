@@ -121,17 +121,20 @@ public static class FrameworkScanner
         try
         {
             var read = await RepositoryWalker.ReadAsync(api, repo, branch, FrameworkParser.IsInterestingFile,
-                FrameworkParser.Parse, fileParallelism, ct);
+                (path, xml) => (Frameworks: FrameworkParser.Parse(path, xml), Traits: ProjectTraits.Parse(xml)),
+                fileParallelism, ct);
 
             // Unreadable files are kept as null, so that a project never falls back to a farther
             // Directory.Build.props than the one MSBuild would import. Git paths are case-sensitive:
             // two paths differing only by case are two projects.
             var files = new Dictionary<string, DeclaredFrameworks?>(StringComparer.Ordinal);
+            var traits = new Dictionary<string, ProjectTraits?>(StringComparer.Ordinal);
             foreach (var file in read.Files)
             {
-                diagnostic?.Files.Add(new FrameworkFileDiagnostic(file.Path, file.ContentLength, file.Parsed,
-                    file.Error));
-                files[file.Path] = file.Parsed;
+                diagnostic?.Files.Add(new FrameworkFileDiagnostic(file.Path, file.ContentLength,
+                    file.Error is null ? file.Parsed.Frameworks : null, file.Error));
+                files[file.Path] = file.Error is null ? file.Parsed.Frameworks : null;
+                traits[file.Path] = file.Error is null ? file.Parsed.Traits : null;
                 if (file.Error is null) filesRead++;
                 else failures.Add($"{file.Path}: {file.Error}");
             }
@@ -139,9 +142,14 @@ public static class FrameworkScanner
             // An unreadable project stays listed, as unresolved, and makes the repository partial.
             var projects = files.Keys.Where(NuGetDependencyParser.IsProjectFile).ToArray();
             foreach (var project in projects)
-            foreach (var resolved in FrameworkParser.Resolve(project, files))
-                frameworks.Add(new FrameworkOccurrence(repo.Project, repo.Name, branch.Name, branch.ObjectId,
-                    project, resolved.Framework, resolved.Source, api.FileUrl(repo, branch.ObjectId, project)));
+            {
+                var kind = ProjectClassifier.Classify(project, traits);
+                diagnostic?.Projects.Add(kind);
+                foreach (var resolved in FrameworkParser.Resolve(project, files))
+                    frameworks.Add(new FrameworkOccurrence(repo.Project, repo.Name, branch.Name, branch.ObjectId,
+                        project, resolved.Framework, resolved.Source, api.FileUrl(repo, branch.ObjectId, project),
+                        kind.Type));
+            }
 
             var status = failures.Count > 0 ? CoverageStatus.Partial
                 : projects.Length == 0 ? CoverageStatus.NoProjectFiles : CoverageStatus.OK;

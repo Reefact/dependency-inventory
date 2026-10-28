@@ -19,6 +19,9 @@ public sealed class RepositoryDiagnostic
     /// <summary>With --transitive, how the graph of every project and framework was found, and what it could not follow.</summary>
     public List<TransitiveDiagnostic> Transitive { get; } = [];
 
+    /// <summary>The kind of every project file and the rule that decided it.</summary>
+    public List<ProjectClassification> Projects { get; } = [];
+
     /// <summary>The same diagnostic, for another branch on the same commit.</summary>
     public RepositoryDiagnostic OnBranch(string branch)
     {
@@ -30,6 +33,7 @@ public sealed class RepositoryDiagnostic
         copy.Files.AddRange(Files);
         copy.Usages.AddRange(Usages);
         copy.Transitive.AddRange(Transitive);
+        copy.Projects.AddRange(Projects);
         return copy;
     }
 }
@@ -53,6 +57,9 @@ public sealed class FrameworkRepositoryDiagnostic
     public List<string> AvailableBranches { get; } = [];
     public List<FrameworkFileDiagnostic> Files { get; } = [];
 
+    /// <summary>The kind of every project file and the rule that decided it.</summary>
+    public List<ProjectClassification> Projects { get; } = [];
+
     /// <summary>The same diagnostic, for another branch on the same commit.</summary>
     public FrameworkRepositoryDiagnostic OnBranch(string branch)
     {
@@ -62,6 +69,7 @@ public sealed class FrameworkRepositoryDiagnostic
         };
         copy.AvailableBranches.AddRange(AvailableBranches);
         copy.Files.AddRange(Files);
+        copy.Projects.AddRange(Projects);
         return copy;
     }
 }

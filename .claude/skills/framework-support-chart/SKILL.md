@@ -55,6 +55,9 @@ Ask the user, in one message, before building anything:
 - the **language** of the chart texts: English or French (`--lang en|fr`);
 - which **packages** to show, as globs on package ids (`--include`, repeatable); all by default;
 - when the report lists several branches per repository, which **branch** to chart (`--branch`);
+- which **kinds of projects** to count (`--project-type`, repeatable: Application, Library, Test, Sample), when
+  `dependencies.csv` has the ProjectType column (depinv 1.0.0-preview.8 and later); all by default. Charting
+  `Application` only answers "which applications use which version", without libraries and tests;
 - the **date** of the support status (`--as-of`, today by default) and how many **months** ahead counts
   as "ending soon" (`--warn-months`, 6 by default).
 
@@ -65,7 +68,7 @@ Propose the defaults so that the user can answer "ok".
 ```bash
 python3 <skill-dir>/scripts/build_chart.py \
   --dependencies <dependencies.csv> --frameworks <package-frameworks.csv> \
-  --title "<title>" [--eyebrow "<line above>"] [--lang fr] [--include "<glob>" ...] [--branch "<glob>" ...] \
+  --title "<title>" [--eyebrow "<line above>"] [--lang fr] [--include "<glob>" ...] [--branch "<glob>" ...] [--project-type <type> ...] \
   [--as-of YYYY-MM-DD] [--warn-months 6] \
   --output <dir>/chart.html
 node <skill-dir>/scripts/render_png.js <dir>/chart.html <dir>/chart.png
