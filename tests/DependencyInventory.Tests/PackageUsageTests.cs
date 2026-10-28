@@ -611,6 +611,32 @@ public sealed class PackageUsageTests
     }
 
     [Fact]
+    public async Task AConditionalGlobalUsingAppliesConditionallyToTheOtherFiles()
+    {
+        var (feedA, feedB, nugetOrg) = Feeds();
+        var api = new FakeRepositoryProvider().AddRepository("app", files: new Dictionary<string, string>
+        {
+            ["/Worker.csproj"] = Project("Microsoft.NET.Sdk", "Contoso.Messaging@1.0.0"),
+            ["/GlobalUsings.cs"] = """
+                #if FEATURE
+                global using Contoso.Messaging;
+                #endif
+                """,
+            ["/Worker.cs"] = """
+                #if FEATURE
+                class Worker { Bus bus; }
+                #endif
+                """
+        });
+
+        var (references, diagnostic) = await ScanAsync(api, Catalog(feedA, feedB, nugetOrg));
+
+        Assert.Equal(PackageUsage.Undetermined, Assert.Single(references).Usage);
+        Assert.Equal("Only referenced in #if branches depending on symbols: Contoso.Messaging.Bus.",
+            Assert.Single(diagnostic.Usages).Reason);
+    }
+
+    [Fact]
     public async Task AConditionalUsingMakesTheReferencesItResolvesConditional()
     {
         var (feedA, feedB, nugetOrg) = Feeds();
