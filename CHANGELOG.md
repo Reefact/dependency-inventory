@@ -11,8 +11,9 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 ### Fixed
 
 - **`depinv packages` no longer reads source files for packages it cannot read.** The C# files of a project are
-  only read when at least one package it references was found in a source. A scan of internal packages without
-  `--feed`, whose usage is undetermined anyway, is about as fast again as before 1.0.0-preview.5.
+  only read when at least one package it references was found in a source. Without `--feed`, a scan of packages
+  unavailable on nuget.org no longer fetches any C# source files, reducing unnecessary requests compared with
+  1.0.0-preview.5.
 
 ## [1.0.0-preview.5] - 2026-10-28
 
