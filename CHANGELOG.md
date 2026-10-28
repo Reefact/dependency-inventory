@@ -8,6 +8,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+## [1.0.0-preview.5] - 2026-10-28
+
 ### Added
 
 - **`depinv packages` tells whether the code uses each referenced package.** The new Usage column of
@@ -108,7 +110,8 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 - **Distribution as a .NET tool**: `dotnet tool install --global Reefact.DependencyInventory --prerelease` installs the `depinv`
   command. The package is licensed under Apache-2.0.
 
-[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.4...HEAD
+[Unreleased]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.5...HEAD
+[1.0.0-preview.5]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.4...v1.0.0-preview.5
 [1.0.0-preview.4]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.3...v1.0.0-preview.4
 [1.0.0-preview.3]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.2...v1.0.0-preview.3
 [1.0.0-preview.2]: https://github.com/Reefact/dependency-inventory/compare/v1.0.0-preview.1...v1.0.0-preview.2
