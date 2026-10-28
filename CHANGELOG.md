@@ -10,6 +10,9 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ### Fixed
 
+- **`depinv packages` reads the packages of Azure Artifacts feeds**, which redirect their downloads to their storage
+  (HTTP 303). Such packages were reported `Undetermined`, with "Azure Artifacts returned HTTP 303" in
+  `diagnostics.json`. The redirection is followed without sending the credentials to the storage.
 - **`depinv packages` no longer reads source files for packages it cannot read.** The C# files of a project are
   only read when at least one package it references was found in a source. Without `--feed`, a scan of packages
   unavailable on nuget.org no longer fetches any C# source files, reducing unnecessary requests compared with
