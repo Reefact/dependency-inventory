@@ -209,8 +209,8 @@ public sealed class ScanTests
                 (await File.ReadAllLinesAsync(Path.Combine(directory, "central-versions.csv")))[0]);
             Assert.Equal(
             [
-                "Project;Repository;File;Package;Version;Source;Type;Files",
-                "project;api;/src/Api.csproj;Stime.Web;2.0.0;Feed;Stime.Web.Host;3"
+                "Project;Repository;Branch;Commit;File;Package;Version;Source;Type;Files",
+                "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Feed;Stime.Web.Host;3"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "used-types.csv")));
 
             // A later run without --used-types in the same folder leaves no stale file behind.

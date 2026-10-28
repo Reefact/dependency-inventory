@@ -38,6 +38,10 @@ public release metadata for the support dates.
   depinv feed --provider azure --url "https://dev.azure.com/<organization>/<project>" --feed <feed> --versions-from dependency-report/dependencies.csv
   ```
 
+A `dependencies.csv` written with `depinv packages --branch-mode all` lists every scanned branch of a repository,
+each with its own lines: the chart would count those references once per branch. `build_chart.py` warns when a
+repository has several branches; chart one of them with `--branch` (a glob, repeatable).
+
 The user usually runs these commands (they hold the credentials) and hands over the two files. If they
 only have one of them, explain which command produces the other; do not build the chart from a guess.
 
@@ -50,6 +54,7 @@ Ask the user, in one message, before building anything:
   wording is the user's;
 - the **language** of the chart texts: English or French (`--lang en|fr`);
 - which **packages** to show, as globs on package ids (`--include`, repeatable); all by default;
+- when the report lists several branches per repository, which **branch** to chart (`--branch`);
 - the **date** of the support status (`--as-of`, today by default) and how many **months** ahead counts
   as "ending soon" (`--warn-months`, 6 by default).
 
@@ -60,7 +65,7 @@ Propose the defaults so that the user can answer "ok".
 ```bash
 python3 <skill-dir>/scripts/build_chart.py \
   --dependencies <dependencies.csv> --frameworks <package-frameworks.csv> \
-  --title "<title>" [--eyebrow "<line above>"] [--lang fr] [--include "<glob>" ...] \
+  --title "<title>" [--eyebrow "<line above>"] [--lang fr] [--include "<glob>" ...] [--branch "<glob>" ...] \
   [--as-of YYYY-MM-DD] [--warn-months 6] \
   --output <dir>/chart.html
 node <skill-dir>/scripts/render_png.js <dir>/chart.html <dir>/chart.png

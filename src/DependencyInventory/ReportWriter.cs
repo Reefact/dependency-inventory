@@ -40,9 +40,10 @@ public static class ReportWriter
         if (!usedTypes) File.Delete(usedTypesFile);
         else
             await WriteCsvAsync(usedTypesFile,
-                ["Project", "Repository", "File", "Package", "Version", "Source", "Type", "Files"],
-                references.SelectMany(x => (x.UsedTypes ?? []).Select(t => new[] { x.Project, x.Repository, x.File, x.Package,
-                    x.Version ?? "", x.Source?.ToString() ?? "", t.Type, t.Files.ToString() })), ct);
+                ["Project", "Repository", "Branch", "Commit", "File", "Package", "Version", "Source", "Type", "Files"],
+                references.SelectMany(x => (x.UsedTypes ?? []).Select(t => new[] { x.Project, x.Repository, x.Branch,
+                    x.Commit, x.File, x.Package, x.Version ?? "", x.Source?.ToString() ?? "", t.Type,
+                    t.Files.ToString() })), ct);
 
         // Only with --transitive; the file of a previous run in the same folder is removed otherwise.
         var transitiveFile = Path.Combine(absolute, "transitive-dependencies.csv");

@@ -53,6 +53,8 @@ public sealed class DepinvAppTests
     [InlineData("packages", "--pattern", "A", "--branch-file", "missing-branches.txt")]
     [InlineData("frameworks", "--branch", "main", "--branch-file", "branches.txt")]
     [InlineData("frameworks", "--branch-file", "missing-branches.txt")]
+    [InlineData("packages", "--pattern", "A", "--branch-mode", "all")]
+    [InlineData("frameworks", "--branch-mode", "all")]
     public async Task InvalidBranchOptionsAreRejected(params string[] arguments)
     {
         Assert.Equal(2, await DepinvApp.Create().RunAsync(

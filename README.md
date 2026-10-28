@@ -173,8 +173,8 @@ depinv packages --provider gitlab --url "https://gitlab.example.com/red/web" --p
   --credentials-file, the Azure credentials file). The PAT needs the Packaging (Read) scope.
 - nuget.org is read anonymously, unless --no-nuget-org is given; with --no-nuget-org, at least one --feed is required.
   Without --feed, internal packages end up Undetermined.
-- --used-types also writes used-types.csv: one line per type referenced, with Project, Repository, File, Package,
-  Version and Source to join dependencies.csv, the full name of the Type, and Files, the number of C# files
+- --used-types also writes used-types.csv: one line per type referenced, with Project, Repository, Branch, Commit,
+  File, Package, Version and Source to join dependencies.csv, the full name of the Type, and Files, the number of C# files
   referencing it (0 for a type only named by a Using item of the project file).
 
 The Source column gives the real origin of the package: Feed, with the feed in the Feed column, for a package
@@ -364,6 +364,18 @@ master
 The file is only read when --branch-file names it. --branch and --branch-file cannot be combined. The scan header prints the branches looked for and where they come from.
 
 A repository that has none of the branches of its list, and no `@default` in it, is not scanned: repositories.csv reports it with the NoBranch status and the branches looked for. Without either option, a repository without a default branch (an empty one) is reported NoBranch too. There is no fallback to another branch when no dependency is found.
+
+#### Several branches
+
+--branch-mode all scans every branch of the list that exists, instead of the first one: in declaration order, then in natural order within a glob, each branch once. It needs --branch or --branch-file; `--branch "*"` scans every branch.
+
+~~~powershell
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --branch release --branch develop --branch-mode all
+~~~
+
+Each branch gets its own lines, with no deduplication: a reference declared on release and on develop is reported twice, told apart by the Branch and Commit columns. repositories.csv then has one line per repository and branch, and report.json and diagnostics.json one entry per repository and branch. Counting references across branches counts each one once per branch: filter on one branch to count them.
+
+The work is shared between branches, the reports are not: branches on the same commit are scanned once, and a file whose content was already read on another branch of the repository is not downloaded again.
 
 Both providers read files from each repository's selected commit without cloning it.
 

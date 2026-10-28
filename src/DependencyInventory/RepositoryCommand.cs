@@ -38,6 +38,12 @@ public abstract class RepositorySettings : OriginSettings
         "repositories their own list.")]
     public string? BranchFile { get; init; }
 
+    [CommandOption("--branch-mode <MODE>")]
+    [Description("first (default): the first listed branch that exists; all: every listed branch that exists, " +
+        "each on its own lines in the reports. all needs --branch or --branch-file.")]
+    [DefaultValue(BranchMode.First)]
+    public BranchMode BranchMode { get; init; } = BranchMode.First;
+
     [CommandOption("--diagnostics")]
     [Description("Export the branches and what was read in every file to diagnostics.json.")]
     public bool Diagnostics { get; init; }
@@ -91,7 +97,7 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
         if (!Prepare(settings, url)) return 2;
 
         BranchPolicy branches;
-        try { branches = BranchPolicy.FromOptions(settings.Branches, settings.BranchFile); }
+        try { branches = BranchPolicy.FromOptions(settings.Branches, settings.BranchFile, settings.BranchMode); }
         catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or
             UnauthorizedAccessException)
         {

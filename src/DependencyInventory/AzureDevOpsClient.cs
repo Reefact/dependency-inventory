@@ -81,7 +81,8 @@ public sealed class AzureDevOpsClient : IDisposable
         return document.RootElement.GetProperty("value").EnumerateArray()
             .Select(f => new GitFile(
                 Get(f, "path"),
-                f.TryGetProperty("isFolder", out var folder) && folder.ValueKind == JsonValueKind.True))
+                f.TryGetProperty("isFolder", out var folder) && folder.ValueKind == JsonValueKind.True,
+                f.TryGetProperty("objectId", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null))
             .ToArray();
     }
 

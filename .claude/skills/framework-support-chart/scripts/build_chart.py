@@ -242,6 +242,24 @@ def add_months(day: dt.date, months: int) -> dt.date:
     return day.replace(year=year, month=month, day=min(day.day, calendar.monthrange(year, month)[1]))
 
 
+def select_branches(rows: list[dict], branches: list[str], source: Path) -> list[dict]:
+    """The rows of the branches matching one of the globs; all rows without any, with a warning when a repository
+    has several branches, since its references would then be counted once per branch."""
+    if branches:
+        return [r for r in rows
+                if any(fnmatch.fnmatch((r.get("Branch") or "").lower(), b.lower()) for b in branches)]
+    by_repository: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        by_repository[(row.get("Project") or "", row.get("Repository") or "")].add(row.get("Branch") or "")
+    several = sorted(repository for (_, repository), found in by_repository.items() if len(found) > 1)
+    if several:
+        shown = ", ".join(several[:3]) + (", ..." if len(several) > 3 else "")
+        subject = "1 repository has" if len(several) == 1 else f"{len(several)} repositories have"
+        print(f"warning: {subject} several branches in {source} ({shown}): their "
+              "references are counted once per branch. Pass --branch to keep one.", file=sys.stderr)
+    return rows
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dependencies", type=Path, required=True, help="dependencies.csv of depinv packages")
@@ -250,6 +268,9 @@ def main() -> None:
     parser.add_argument("--eyebrow", default="", help="small line above the title")
     parser.add_argument("--include", action="append", default=[],
                         help="glob on package ids to keep (repeatable, case-insensitive); all by default")
+    parser.add_argument("--branch", action="append", default=[],
+                        help="only the references of the branches matching this glob (repeatable): a report of "
+                             "depinv packages --branch-mode all lists every branch")
     parser.add_argument("--lang", choices=sorted(TEXT), default="en", help="language of the chart texts")
     parser.add_argument("--as-of", type=dt.date.fromisoformat, default=dt.date.today(),
                         help="date of the support status, YYYY-MM-DD; today by default")
@@ -273,6 +294,7 @@ def main() -> None:
     names: dict[str, str] = {}
     unresolved = 0
     dependency_rows = read_csv(args.dependencies)
+    dependency_rows = select_branches(dependency_rows, args.branch, args.dependencies)
     # Reports of depinv before 1.0.0-preview.5 have no Usage column: the chart then shows references only.
     has_usage = bool(dependency_rows) and "Usage" in dependency_rows[0]
     for row in dependency_rows:

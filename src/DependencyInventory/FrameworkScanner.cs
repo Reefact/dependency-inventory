@@ -2,7 +2,12 @@ namespace DependencyInventory;
 
 public sealed record FrameworkRepositoryResult(
     ProjectCoverage Coverage,
-    IReadOnlyList<FrameworkOccurrence> Frameworks);
+    IReadOnlyList<FrameworkOccurrence> Frameworks)
+{
+    /// <summary>The same scan, for another branch on the same commit.</summary>
+    public FrameworkRepositoryResult OnBranch(string branch) => new(Coverage with { Branch = branch },
+        Frameworks.Select(f => f with { Branch = branch }).ToArray());
+}
 
 public sealed record FrameworkScanResult(
     IReadOnlyList<FrameworkOccurrence> Frameworks,
@@ -25,15 +30,10 @@ public static class FrameworkScanner
         IReadOnlyList<Repository> repositories, bool collectDiagnostics,
         ScanParallelism parallelism, IScanProgress? progress, CancellationToken ct, BranchPolicy? branches = null)
     {
-        var results = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
-            async (repo, fileDegree, token) =>
-            {
-                var diagnostic = collectDiagnostics
-                    ? new FrameworkRepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
-                    : null;
-                var scan = await ScanRepositoryAsync(api, repo, diagnostic, token, fileDegree, branches);
-                return (Scan: scan, Diagnostic: diagnostic);
-            }, ct);
+        var perRepository = await RepositoryWalker.ForEachAsync(repositories, parallelism, progress,
+            (repo, fileDegree, token) => ScanBranchesAsync(api, repo, collectDiagnostics, null, token, fileDegree,
+                branches ?? BranchPolicy.RepositoryDefault), ct);
+        var results = perRepository.SelectMany(x => x).ToArray();
 
         return new FrameworkScanResult(
             results.SelectMany(x => x.Scan.Frameworks).ToArray(),
@@ -42,37 +42,86 @@ public static class FrameworkScanner
     }
 
     /// <summary>
-    /// Scans one repository on its selected branch: one entry per framework of every project file found.
-    /// Failures are reported in the coverage, never thrown, except cancellation.
+    /// Scans one repository on the first branch <paramref name="branches"/> selects: one entry per framework of every
+    /// project file found. Failures are reported in the coverage, never thrown, except cancellation.
     /// </summary>
     public static async Task<FrameworkRepositoryResult> ScanRepositoryAsync(IRepositoryProvider api,
         Repository repo, FrameworkRepositoryDiagnostic? diagnostic, CancellationToken ct, int fileParallelism = 1,
-        BranchPolicy? branches = null)
+        BranchPolicy? branches = null) =>
+        (await ScanBranchesAsync(api, repo, false, diagnostic, ct, fileParallelism,
+            (branches ?? BranchPolicy.RepositoryDefault).With(BranchMode.First)))[0].Scan;
+
+    /// <summary>
+    /// Scans one repository on every branch <paramref name="branches"/> selects, in order: one result per branch,
+    /// or a single one when no branch could be scanned. Each branch gets its own diagnostic, or
+    /// <paramref name="diagnostic"/> for the first.
+    /// </summary>
+    internal static async Task<IReadOnlyList<(FrameworkRepositoryResult Scan, FrameworkRepositoryDiagnostic? Diagnostic)>>
+        ScanBranchesAsync(IRepositoryProvider api, Repository repo, bool collectDiagnostics,
+            FrameworkRepositoryDiagnostic? diagnostic, CancellationToken ct, int fileParallelism, BranchPolicy branches)
+    {
+        FrameworkRepositoryDiagnostic? NewDiagnostic()
+        {
+            var created = diagnostic ?? (collectDiagnostics
+                ? new FrameworkRepositoryDiagnostic { Project = repo.Project, Repository = repo.Name }
+                : null);
+            diagnostic = null;
+            return created;
+        }
+
+        if (repo.IsDisabled)
+            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"), []),
+                NewDiagnostic())];
+
+        BranchSelection selection;
+        try { selection = await RepositoryWalker.SelectBranchesAsync(api, repo, branches, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.Failed, 0, 0, ex.Message), []),
+                NewDiagnostic())];
+        }
+
+        if (selection.Selected.Count == 0)
+        {
+            var none = NewDiagnostic();
+            none?.AvailableBranches.AddRange(selection.Available.Select(b => b.Name));
+            return [(new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, selection.NoBranchReason),
+                []), none)];
+        }
+
+        return await RepositoryWalker
+            .ForEachBranchAsync<(FrameworkRepositoryResult Scan, FrameworkRepositoryDiagnostic? Diagnostic)>(api,
+                selection,
+                async (reader, branch) =>
+                {
+                    var branchDiagnostic = NewDiagnostic();
+                    if (branchDiagnostic is not null)
+                    {
+                        branchDiagnostic.AvailableBranches.AddRange(selection.Available.Select(b => b.Name));
+                        branchDiagnostic.SelectedBranch = branch.Name;
+                        branchDiagnostic.Commit = branch.ObjectId;
+                    }
+                    return (await ScanCommitAsync(reader, repo, branch, branchDiagnostic, ct, fileParallelism),
+                        branchDiagnostic);
+                },
+                (done, branch) => (done.Scan.OnBranch(branch.Name), done.Diagnostic?.OnBranch(branch.Name)));
+    }
+
+    /// <summary>
+    /// Scans the commit of one branch. Failures are reported in the coverage, never thrown, except cancellation.
+    /// </summary>
+    private static async Task<FrameworkRepositoryResult> ScanCommitAsync(IRepositoryProvider api, Repository repo,
+        GitBranch branch, FrameworkRepositoryDiagnostic? diagnostic, CancellationToken ct, int fileParallelism)
     {
         var frameworks = new List<FrameworkOccurrence>();
-        if (repo.IsDisabled)
-            return new(new(repo.Project, repo.Name, null, CoverageStatus.Disabled, 0, 0, "Repository disabled"),
-                frameworks);
-
-        string? branchName = null;
+        var branchName = branch.Name;
         int filesRead = 0;
         var failures = new List<string>();
         try
         {
-            var read = await RepositoryWalker.ReadAsync(api, repo, branches ?? BranchPolicy.RepositoryDefault,
-                FrameworkParser.IsInterestingFile,
-                FrameworkParser.Parse,
-                (branches, selected) =>
-                {
-                    branchName = selected?.Name;
-                    if (diagnostic is null) return;
-                    diagnostic.AvailableBranches.AddRange(branches.Select(b => b.Name));
-                    diagnostic.SelectedBranch = selected?.Name;
-                    diagnostic.Commit = selected?.ObjectId;
-                }, fileParallelism, ct);
-            if (read.Branch is not { } branch)
-                return new(new(repo.Project, repo.Name, null, CoverageStatus.NoBranch, 0, 0, read.NoBranchReason),
-                    frameworks);
+            var read = await RepositoryWalker.ReadAsync(api, repo, branch, FrameworkParser.IsInterestingFile,
+                FrameworkParser.Parse, fileParallelism, ct);
 
             // Unreadable files are kept as null, so that a project never falls back to a farther
             // Directory.Build.props than the one MSBuild would import. Git paths are case-sensitive:

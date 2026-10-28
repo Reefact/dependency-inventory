@@ -95,7 +95,8 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
             $"{RepoApi(repositoryId)}/repository/tree?recursive=true&ref={Uri.EscapeDataString(commitId)}", ct);
         return tree.Select(e => new GitFile(
             "/" + GetString(e, "path").TrimStart('/'),
-            GetString(e, "type") == "tree")).ToArray();
+            GetString(e, "type") == "tree",
+            e.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null)).ToArray();
     }
 
     public async Task<string> GetFileAsync(

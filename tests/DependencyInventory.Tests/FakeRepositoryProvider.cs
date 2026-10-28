@@ -5,6 +5,7 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
 {
     private readonly Dictionary<string, IReadOnlyList<GitBranch>> _branches = new();
     private readonly Dictionary<string, Dictionary<string, string>> _files = new();
+    private readonly Dictionary<string, Dictionary<string, string>> _commitFiles = new();
     private readonly Dictionary<(string Repository, string Path), Exception> _failingFiles = new();
     private readonly HashSet<string> _failingBranches = [];
 
@@ -40,6 +41,18 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
         return this;
     }
 
+    /// <summary>
+    /// Adds a branch on <paramref name="commit"/>; a new commit has its own <paramref name="files"/>, otherwise the
+    /// commit's or the repository's files.
+    /// </summary>
+    public FakeRepositoryProvider AddBranch(string repository, string branch, string commit,
+        IDictionary<string, string>? files = null)
+    {
+        _branches[repository] = [.. _branches[repository], new GitBranch(branch, commit)];
+        if (files is not null) _commitFiles[commit] = new Dictionary<string, string>(files);
+        return this;
+    }
+
     public FakeRepositoryProvider FailFile(string repository, string path, Exception? error = null)
     {
         _failingFiles[(repository, path)] = error ?? new HttpRequestException($"cannot read {path}");
@@ -60,18 +73,23 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
             ? throw new HttpRequestException("branches unavailable")
             : _branches[repositoryId], ct);
 
+    // As in Git, the object id of a file is derived from its content.
     public Task<IReadOnlyList<GitFile>> GetTreeAsync(string repositoryId, string commitId, CancellationToken ct) =>
-        CallAsync<IReadOnlyList<GitFile>>(() => _files[repositoryId].Keys
-            .Select(path => new GitFile(path, false))
+        CallAsync<IReadOnlyList<GitFile>>(() => Files(repositoryId, commitId)
+            .Select(file => new GitFile(file.Key, false, Convert.ToHexString(
+                System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(file.Value)))))
             .Append(new GitFile("/src", true))
             .ToArray(), ct);
+
+    private Dictionary<string, string> Files(string repositoryId, string commitId) =>
+        _commitFiles.TryGetValue(commitId, out var files) ? files : _files[repositoryId];
 
     public Task<string> GetFileAsync(string repositoryId, string commitId, string path, CancellationToken ct)
     {
         FilesRead.Enqueue(path);
         return CallAsync(() => _failingFiles.TryGetValue((repositoryId, path), out var error)
             ? throw error
-            : _files[repositoryId][path], ct);
+            : Files(repositoryId, commitId)[path], ct);
     }
 
     private async Task<T> CallAsync<T>(Func<T> call, CancellationToken ct)

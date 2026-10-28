@@ -2,6 +2,9 @@ using System.Text.RegularExpressions;
 
 namespace DependencyInventory;
 
+/// <summary>How many branches of each repository are scanned: the first listed that exists, or every one.</summary>
+public enum BranchMode { First, All }
+
 /// <summary>
 /// The branches to look for in a repository, in priority order: names, globs (<c>release/*</c>) and
 /// <see cref="BranchPolicy.DefaultBranch"/>. A branch file may give some repositories their own list.
@@ -15,11 +18,13 @@ public sealed class BranchPolicy
     private readonly IReadOnlyList<(string Pattern, Regex Regex, IReadOnlyList<string> List)> _sections;
 
     private BranchPolicy(IReadOnlyList<string>? list,
-        IReadOnlyList<(string Pattern, Regex Regex, IReadOnlyList<string> List)> sections, string? source)
+        IReadOnlyList<(string Pattern, Regex Regex, IReadOnlyList<string> List)> sections, string? source,
+        BranchMode mode = BranchMode.First)
     {
         _list = list;
         _sections = sections;
         Source = source;
+        Mode = mode;
     }
 
     /// <summary>No list: every repository is scanned on its default branch.</summary>
@@ -27,6 +32,19 @@ public sealed class BranchPolicy
 
     /// <summary>Where the lists come from: the file read, or none for --branch and the default branch.</summary>
     public string? Source { get; }
+
+    /// <summary>Whether the first existing branch of a list is scanned, or every existing one.</summary>
+    public BranchMode Mode { get; }
+
+    /// <summary>The same lists, scanned in <paramref name="mode"/>.</summary>
+    /// <exception cref="ArgumentException">Every branch without a list: it is requested explicitly.</exception>
+    public BranchPolicy With(BranchMode mode)
+    {
+        if (mode == BranchMode.All && _list is null && _sections.Count == 0)
+            throw new ArgumentException(
+                "--branch-mode all needs --branch or --branch-file; --branch \"*\" scans every branch.");
+        return new(_list, _sections, Source, mode);
+    }
 
     /// <summary>The same list for every repository, as given by --branch.</summary>
     public static BranchPolicy FromList(IEnumerable<string> branches)
@@ -43,14 +61,17 @@ public sealed class BranchPolicy
     /// </summary>
     /// <exception cref="ArgumentException">Both options, or a missing file.</exception>
     /// <exception cref="FormatException">A malformed file.</exception>
-    public static BranchPolicy FromOptions(IReadOnlyList<string>? branches, string? file)
+    public static BranchPolicy FromOptions(IReadOnlyList<string>? branches, string? file,
+        BranchMode mode = BranchMode.First)
     {
         var listed = branches is { Count: > 0 };
         if (listed && file is not null) throw new ArgumentException("Use --branch or --branch-file, not both.");
-        if (listed) return FromList(branches!);
-        if (file is null) return RepositoryDefault;
-        if (!File.Exists(file)) throw new ArgumentException($"Branch file not found: {file}");
-        return Parse(File.ReadAllText(file), file);
+        BranchPolicy policy;
+        if (listed) policy = FromList(branches!);
+        else if (file is null) policy = RepositoryDefault;
+        else if (!File.Exists(file)) throw new ArgumentException($"Branch file not found: {file}");
+        else policy = Parse(File.ReadAllText(file), file);
+        return policy.With(mode);
     }
 
     /// <summary>
@@ -109,7 +130,7 @@ public sealed class BranchPolicy
     public string Describe()
     {
         var text = _list is null ? "the default branch of each repository"
-            : string.Join(", ", _list) + " (the first that exists)";
+            : string.Join(", ", _list) + (Mode == BranchMode.All ? " (every one that exists)" : " (the first that exists)");
         if (_sections.Count > 0)
             text += _sections.Count == 1 ? " (1 repository section)" : $" ({_sections.Count} repository sections)";
         return Source is null ? text : $"{text}, from {Source}";
@@ -132,28 +153,45 @@ public static class BranchSelector
     public static GitBranch? Select(IEnumerable<GitBranch> branches, IReadOnlyList<string>? requested,
         string? defaultBranch)
     {
-        var available = branches
-            .Where(b => !string.IsNullOrWhiteSpace(b.Name) &&
+        var available = Available(branches);
+        foreach (var entry in requested ?? [BranchPolicy.DefaultBranch])
+            if (Matches(available, entry, defaultBranch) is { Count: > 0 } found) return found[^1];
+        return null;
+    }
+
+    /// <summary>
+    /// Every branch of <paramref name="requested"/> that exists, each once: in declaration order, then in natural
+    /// order within a glob. The entries are matched as in <see cref="Select"/>.
+    /// </summary>
+    public static IReadOnlyList<GitBranch> SelectAll(IEnumerable<GitBranch> branches,
+        IReadOnlyList<string>? requested, string? defaultBranch)
+    {
+        var available = Available(branches);
+        return (requested ?? [BranchPolicy.DefaultBranch])
+            .SelectMany(entry => Matches(available, entry, defaultBranch))
+            .DistinctBy(b => b.Name, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static GitBranch[] Available(IEnumerable<GitBranch> branches) =>
+        branches.Where(b => !string.IsNullOrWhiteSpace(b.Name) &&
                 !string.IsNullOrWhiteSpace(b.ObjectId) &&
                 b.ObjectId.Any(c => c != '0'))
             .ToArray();
 
-        foreach (var entry in requested ?? [BranchPolicy.DefaultBranch])
+    /// <summary>The branches an entry stands for, in natural order.</summary>
+    private static IReadOnlyList<GitBranch> Matches(GitBranch[] available, string entry, string? defaultBranch)
+    {
+        // The provider gives the exact name: Main and main may be two branches.
+        if (entry.Equals(BranchPolicy.DefaultBranch, StringComparison.OrdinalIgnoreCase))
+            return available.Where(b => b.Name == defaultBranch).Take(1).ToArray();
+        if (entry.IndexOfAny(['*', '?']) >= 0)
         {
-            GitBranch? found;
-            if (entry.Equals(BranchPolicy.DefaultBranch, StringComparison.OrdinalIgnoreCase))
-                // The provider gives the exact name: Main and main may be two branches.
-                found = defaultBranch is null ? null : available.FirstOrDefault(b => b.Name == defaultBranch);
-            else if (entry.IndexOfAny(['*', '?']) >= 0)
-            {
-                var glob = BranchPolicy.Glob(entry);
-                found = available.Where(b => glob.IsMatch(b.Name))
-                    .OrderByDescending(b => b.Name, NaturalComparer.Instance).FirstOrDefault();
-            }
-            else found = Named(available, entry);
-            if (found is not null) return found;
+            var glob = BranchPolicy.Glob(entry);
+            return available.Where(b => glob.IsMatch(b.Name)).OrderBy(b => b.Name, NaturalComparer.Instance)
+                .ToArray();
         }
-        return null;
+        return Named(available, entry) is { } named ? [named] : [];
     }
 
     private static GitBranch? Named(IEnumerable<GitBranch> branches, string name) =>
