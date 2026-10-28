@@ -205,6 +205,18 @@ class BranchTests(unittest.TestCase):
         self.assertEqual(err.getvalue(), "")
 
 
+class CsvTests(unittest.TestCase):
+    def test_the_separator_is_the_one_of_the_header_line(self):
+        for delimiter in (",", ";", "\t"):
+            with self.subTest(delimiter=delimiter), tempfile.TemporaryDirectory() as folder:
+                report = Path(folder) / "dependencies.csv"
+                report.write_text(f"Scope{delimiter}Package{delimiter}Version\n"
+                                  f'"a, b; c"{delimiter}A{delimiter}1.0.0\n', encoding="utf-8-sig")
+                columns, rows = build_chart.read_csv_with_columns(report)
+                self.assertEqual(columns, ["Scope", "Package", "Version"])
+                self.assertEqual(rows, [{"Scope": "a, b; c", "Package": "A", "Version": "1.0.0"}])
+
+
 class ProjectTypeTests(unittest.TestCase):
     ROWS = [
         {"Repository": "api", "File": "/src/Api.csproj", "ProjectType": "Application"},

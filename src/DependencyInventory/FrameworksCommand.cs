@@ -23,7 +23,8 @@ public sealed class FrameworksCommand : RepositoryCommand<FrameworksSettings>
                 parallelism, progress, cancellationToken, branches));
 
         var report = new FrameworkReport(DateTimeOffset.UtcNow, api.Origin, result.Frameworks, result.Coverage);
-        var paths = await ReportWriter.SaveFrameworksAsync(report, settings.Output, cancellationToken);
+        var paths = await ReportWriter.SaveFrameworksAsync(report, settings.Output, settings.Delimiter,
+            cancellationToken);
         if (settings.Diagnostics)
         {
             await ReportWriter.SaveDiagnosticsAsync(result.Diagnostics, paths, cancellationToken);

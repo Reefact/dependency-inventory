@@ -164,11 +164,11 @@ public sealed class ScanTests
             await ReportWriter.SaveAsync(report, directory, CancellationToken.None);
 
             // The CSV files keep one kind each: the Kind is only written to report.json.
-            Assert.Contains(";2.0.0;Central;",
+            Assert.Contains(",2.0.0,Central,",
                 await File.ReadAllTextAsync(Path.Combine(directory, "dependencies.csv")));
-            Assert.Contains(";2.0.0;Explicit;",
+            Assert.Contains(",2.0.0,Explicit,",
                 await File.ReadAllTextAsync(Path.Combine(directory, "central-versions.csv")));
-            Assert.Contains(";Partial;",
+            Assert.Contains(",Partial,",
                 await File.ReadAllTextAsync(Path.Combine(directory, "repositories.csv")));
             var json = await File.ReadAllTextAsync(Path.Combine(directory, "report.json"));
             Assert.Contains("\"Kind\": \"CentralVersion\"", json);
@@ -176,6 +176,51 @@ public sealed class ScanTests
             Assert.Contains("\"Status\": \"Partial\"", json);
             Assert.Contains("\"Scope\": \"project\"", json);
             Assert.DoesNotContain("\"Project\":", json);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData(",", ',')]
+    [InlineData(";", ';')]
+    [InlineData("tab", '\t')]
+    [InlineData("TAB", '\t')]
+    [InlineData("\\t", '\t')]
+    [InlineData("\t", '\t')]
+    public void TheCsvDelimiterIsACommaASemicolonOrATab(string name, char expected)
+    {
+        Assert.Equal(expected, CsvFormat.Delimiter(name));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("|")]
+    [InlineData(" ;")]
+    public void AnyOtherCsvDelimiterIsRefused(string name)
+    {
+        Assert.Throws<ArgumentException>(() => CsvFormat.Delimiter(name));
+    }
+
+    [Theory]
+    [InlineData(',', "project,api,,,,Failed,0,0,\"Timeout, then 503\",")]
+    [InlineData(';', "project;api;;;;Failed;0;0;Timeout, then 503;")]
+    [InlineData('\t', "project\tapi\t\t\t\tFailed\t0\t0\tTimeout, then 503\t")]
+    public async Task ReportsUseTheSeparatorAndQuoteTheValuesHoldingIt(char delimiter, string line)
+    {
+        var report = new ScanReport(DateTimeOffset.UnixEpoch, "origin", [], [],
+            [new("project", "api", null, CoverageStatus.Failed, 0, 0, "Timeout, then 503")]);
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            await ReportWriter.SaveAsync(report, directory, false, delimiter, CancellationToken.None);
+
+            var lines = await File.ReadAllLinesAsync(Path.Combine(directory, "repositories.csv"));
+            Assert.Equal(string.Join(delimiter, "Scope", "Repository", "Branch", "Commit", "CommitDate", "Status",
+                "FilesExamined", "References", "Details", "Url"), lines[0]);
+            Assert.Equal(line, lines[1]);
         }
         finally
         {
@@ -206,15 +251,15 @@ public sealed class ScanTests
 
             Assert.Equal(
             [
-                "Scope;Repository;Branch;Commit;File;ProjectType;Package;Version;VersionSource;MatchedFilters;Usage;Source;Feed;Url",
-                "project;api;main;abc;/src/Api.csproj;Application;Stime.Web;2.0.0;Explicit;Glob:Stime.*;Used;Feed;Shared/libs;https://example/web"
+                "Scope,Repository,Branch,Commit,File,ProjectType,Package,Version,VersionSource,MatchedFilters,Usage,Source,Feed,Url",
+                "project,api,main,abc,/src/Api.csproj,Application,Stime.Web,2.0.0,Explicit,Glob:Stime.*,Used,Feed,Shared/libs,https://example/web"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "dependencies.csv")));
-            Assert.Equal("Scope;Repository;Branch;Commit;File;Package;Version;VersionSource;MatchedFilters;Url",
+            Assert.Equal("Scope,Repository,Branch,Commit,File,Package,Version,VersionSource,MatchedFilters,Url",
                 (await File.ReadAllLinesAsync(Path.Combine(directory, "central-versions.csv")))[0]);
             Assert.Equal(
             [
-                "Scope;Repository;Branch;Commit;File;Package;Version;Source;Type;Files",
-                "project;api;main;abc;/src/Api.csproj;Stime.Web;2.0.0;Feed;Stime.Web.Host;3"
+                "Scope,Repository,Branch,Commit,File,Package,Version,Source,Type,Files",
+                "project,api,main,abc,/src/Api.csproj,Stime.Web,2.0.0,Feed,Stime.Web.Host,3"
             ], await File.ReadAllLinesAsync(Path.Combine(directory, "used-types.csv")));
 
             // A later run without --used-types in the same folder leaves no stale file behind.

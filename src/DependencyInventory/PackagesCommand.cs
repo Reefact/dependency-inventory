@@ -141,7 +141,8 @@ public sealed class PackagesCommand : RepositoryCommand<PackagesSettings>
     {
         var report = new ScanReport(DateTimeOffset.UtcNow, api.Origin, matcher.Filters,
             result.Occurrences, result.Coverage, result.TransitiveDependencies);
-        var paths = await ReportWriter.SaveAsync(report, settings.Output, settings.UsedTypes, cancellationToken);
+        var paths = await ReportWriter.SaveAsync(report, settings.Output, settings.UsedTypes, settings.Delimiter,
+            cancellationToken);
         if (settings.Diagnostics)
         {
             await ReportWriter.SaveDiagnosticsAsync(result.Diagnostics, paths, cancellationToken);

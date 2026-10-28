@@ -95,6 +95,7 @@ public sealed class FeedCommand : AsyncCommand<FeedSettings>
                 settings.CaseSensitive);
             if (settings.Parallelism is < 1 or > ScanParallelism.MaxDegree)
                 throw new ArgumentException($"--parallelism must be between 1 and {ScanParallelism.MaxDegree}.");
+            CsvFormat.Delimiter(settings.CsvDelimiter);
         }
         catch (ArgumentException ex)
         {
@@ -147,7 +148,8 @@ public sealed class FeedCommand : AsyncCommand<FeedSettings>
 
             var report = new FeedReport(DateTimeOffset.UtcNow, feed.Origin, packageFilter?.Filters ?? [],
                 dependencyFilter?.Filters ?? [], result.Frameworks, result.Dependencies, result.Packages);
-            var paths = await ReportWriter.SaveFeedAsync(report, settings.Output, cancellationToken);
+            var paths = await ReportWriter.SaveFeedAsync(report, settings.Output, settings.Delimiter,
+                cancellationToken);
             if (settings.Diagnostics)
             {
                 await ReportWriter.SaveDiagnosticsAsync(result.Diagnostics, paths, cancellationToken);

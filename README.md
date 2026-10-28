@@ -151,7 +151,10 @@ The dependency-report folder (configurable with --output) contains:
 In every report, Scope is the Azure DevOps project or the GitLab group (subgroup included) of the repository, not a
 .NET project.
 
-CSV files are UTF-8 with BOM and semicolon-separated.
+CSV files are UTF-8 with BOM and comma-separated; a value holding the separator, a quote or a line break is quoted.
+`--csv-delimiter` chooses another separator, in every command that writes reports: `--csv-delimiter ";"`, which Excel
+opens directly where the decimal separator is a comma (as in French), or `--csv-delimiter tab`. `depinv feed
+--versions-from` reads a dependencies.csv whatever its separator.
 
 ## 🧩 Package usage
 
