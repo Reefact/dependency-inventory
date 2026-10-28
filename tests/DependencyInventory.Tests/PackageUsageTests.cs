@@ -215,6 +215,25 @@ public sealed class PackageUsageTests
     }
 
     [Fact]
+    public async Task ANearerDirectoryBuildPropsShadowsTheOnesAboveIt()
+    {
+        var (feedA, feedB, nugetOrg) = Feeds();
+        var api = new FakeRepositoryProvider().AddRepository("app", files: new Dictionary<string, string>
+        {
+            ["/Directory.Build.props"] =
+                """<Project><ItemGroup><PackageReference Include="Contoso.Messaging" Version="1.0.0" /></ItemGroup></Project>""",
+            ["/src/Directory.Build.props"] = "<Project />",
+            ["/src/Worker/Worker.csproj"] = Project("Microsoft.NET.Sdk"),
+            ["/src/Worker/Worker.cs"] = "using Contoso.Messaging; class Worker { Bus bus; }"
+        });
+
+        var (references, diagnostic) = await ScanAsync(api, Catalog(feedA, feedB, nugetOrg));
+
+        Assert.Equal(PackageUsage.Undetermined, Assert.Single(references).Usage);
+        Assert.Empty(Assert.Single(diagnostic.Usages).Projects);
+    }
+
+    [Fact]
     public async Task AnUnreadableSourceFileMakesAnUnusedPackageUndetermined()
     {
         var (feedA, feedB, nugetOrg) = Feeds();

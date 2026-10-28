@@ -94,10 +94,10 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
     private async Task<IReadOnlyList<Graph>> ComputeAsync(string project, IReadOnlyDictionary<string, MsBuildFile> files,
         string? note, CancellationToken ct)
     {
-        var folder = PackageUsageAnalyzer.Folder(project);
-        var declaring = files.Where(f => f.Key == project ||
-                !NuGetDependencyParser.IsProjectFile(f.Key) &&
-                folder.StartsWith(PackageUsageAnalyzer.Folder(f.Key), StringComparison.Ordinal))
+        // The same files as for the usage: a nearer Directory.Build.props shadows those above it.
+        var projectFiles = files.Keys.Where(NuGetDependencyParser.IsProjectFile).ToArray();
+        var declaring = files
+            .Where(f => PackageUsageAnalyzer.TargetProjects(f.Key, projectFiles, files.Keys).Contains(project))
             .ToArray();
         var packages = files.ToDictionary(f => f.Key, f => f.Value.Packages, StringComparer.Ordinal);
         var direct = new List<(string Id, VersionRange? Range, string? Declared)>();
@@ -110,9 +110,11 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
         }
 
         // Central Package Management: with transitive pinning, a central version applies to transitive packages too.
+        // MSBuild imports Directory.Build.props, then Directory.Packages.props, then reads the project: the last one
+        // setting the property wins.
         var central = Nearest(files, project, "/Directory.Packages.props");
-        var pinning = files[project].TransitivePinning || central?.Value.TransitivePinning == true ||
-            Nearest(files, project, "/Directory.Build.props")?.Value.TransitivePinning == true;
+        var pinning = files[project].TransitivePinning ?? central?.Value.TransitivePinning ??
+            Nearest(files, project, "/Directory.Build.props")?.Value.TransitivePinning ?? false;
         var pinned = pinning && central is { } props
             ? props.Value.Packages.Where(p => p.Kind == PackageKind.CentralVersion && p.Version is not null)
                 .GroupBy(p => p.Id, StringComparer.OrdinalIgnoreCase)
@@ -136,10 +138,14 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
             .Select(f => (KeyValuePair<string, MsBuildFile>?)f)
             .FirstOrDefault();
 
+    // The versions chosen change the dependencies read, which may change the versions: resolved again until stable.
+    private const int MaxRounds = 10;
+
     /// <summary>
-    /// NuGet's resolution, level by level: a declared reference always wins; otherwise the nearest level wins, and
-    /// among the ranges of one level, the one with the highest minimum. Each range gives the lowest published version
-    /// satisfying it. A package already resolved is not followed again, which also stops cycles.
+    /// NuGet's resolution: a declared reference always wins, and a version pinned by Central Package Management too;
+    /// any other package takes, among the ranges every package of the graph asks for it, the one with the highest
+    /// minimum, whatever the depth (NuGet's cousin dependencies), then the lowest published version satisfying it. The
+    /// dependency group nearest to the framework applies. Via is the shortest path to the package.
     /// </summary>
     private async Task<Graph> ComputeAsync(string? framework,
         IReadOnlyList<(string Id, VersionRange? Range, string? Declared)> direct,
@@ -148,9 +154,7 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
         var frameworks = framework is null ? Array.Empty<string>() : [framework];
         var unresolved = new List<string>();
         if (note is not null) unresolved.Add(note);
-        var seen = new HashSet<string>(direct.Select(d => d.Id), StringComparer.OrdinalIgnoreCase);
-        var reached = new List<Reached>();
-        var frontier = new List<Node>();
+        var roots = new List<Node>();
         foreach (var (id, range, declared) in direct.DistinctBy(d => d.Id.ToLowerInvariant()))
         {
             if (range is null)
@@ -161,47 +165,87 @@ public sealed class TransitiveResolver(PackageCatalog catalog)
             var resolution = await catalog.ResolveDependenciesAsync(id, range, ct);
             if (resolution.Version is null || resolution.Error is not null)
                 unresolved.Add($"{id} {range.PrettyPrint()}: {resolution.Error}");
-            if (resolution.Version is not null) frontier.Add(new Node(id, resolution, id));
+            if (resolution.Version is not null) roots.Add(new Node(id, resolution, id));
         }
+        var declaredIds = direct.Select(d => d.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        VersionRange Choose(string id, IReadOnlyList<VersionRange> ranges) =>
+            pinned.TryGetValue(id, out var version) && PackageUsageAnalyzer.ResolveRange(version) is { } pin
+                ? pin
+                : ranges.MaxBy(r => r.MinVersion ?? new NuGetVersion(0, 0, 0))!;
 
-        for (var depth = 1; depth <= MaxDepth && frontier.Count > 0; depth++)
+        var chosen = new Dictionary<string, (VersionRange Range, PackageDependencies Package)>(
+            StringComparer.OrdinalIgnoreCase);
+        var round = 0;
+        while (true)
         {
-            var candidates = new Dictionary<string, (string Id, List<VersionRange> Ranges, string Via)>(
+            // Walks the graph with the versions chosen so far, collecting every range asked for each package.
+            var asked = new Dictionary<string, (string Id, List<VersionRange> Ranges, string Via)>(
                 StringComparer.OrdinalIgnoreCase);
-            foreach (var node in frontier.OrderBy(n => n.Via, StringComparer.Ordinal))
-            foreach (var dependency in PackageUsageAnalyzer.Dependencies(node.Package.Dependencies,
-                         node.Package.DependencyGroups, frameworks))
+            var frontier = roots;
+            var visited = new HashSet<string>(declaredIds, StringComparer.OrdinalIgnoreCase);
+            for (var depth = 1; depth <= MaxDepth && frontier.Count > 0; depth++)
             {
-                if (seen.Contains(dependency.Id)) continue;
-                var range = dependency.VersionRange is null ? VersionRange.All
-                    : PackageUsageAnalyzer.ResolveRange(dependency.VersionRange) ?? VersionRange.All;
-                if (!candidates.TryGetValue(dependency.Id, out var candidate))
-                    candidates[dependency.Id] = candidate = (dependency.Id, [], $"{node.Via} > {dependency.Id}");
-                candidate.Ranges.Add(range);
+                var next = new List<Node>();
+                foreach (var node in frontier.OrderBy(n => n.Via, StringComparer.Ordinal))
+                foreach (var dependency in PackageUsageAnalyzer.Dependencies(node.Package.Dependencies,
+                             node.Package.DependencyGroups, frameworks))
+                {
+                    if (declaredIds.Contains(dependency.Id)) continue;
+                    if (!asked.TryGetValue(dependency.Id, out var entry))
+                        asked[dependency.Id] = entry = (dependency.Id, [], $"{node.Via} > {dependency.Id}");
+                    entry.Ranges.Add(dependency.VersionRange is null ? VersionRange.All
+                        : PackageUsageAnalyzer.ResolveRange(dependency.VersionRange) ?? VersionRange.All);
+                    // A package already reached is not followed again, which also stops cycles. One not chosen yet
+                    // is read with the ranges known so far; the next round corrects it if others ask for more.
+                    if (!visited.Add(dependency.Id)) continue;
+                    if (!chosen.TryGetValue(dependency.Id, out var known))
+                    {
+                        var range = Choose(dependency.Id, entry.Ranges);
+                        chosen[dependency.Id] = known = (range,
+                            await catalog.ResolveDependenciesAsync(dependency.Id, range, ct));
+                    }
+                    if (known.Package.Version is not null) next.Add(new Node(dependency.Id, known.Package, entry.Via));
+                }
+                frontier = next;
             }
 
-            var next = new List<Node>();
-            foreach (var (id, ranges, via) in candidates.Values.OrderBy(c => c.Id, StringComparer.OrdinalIgnoreCase))
+            // Chooses each package's range and version; a new choice means another walk.
+            var changed = false;
+            var choices = new Dictionary<string, (VersionRange Range, PackageDependencies Package)>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var (id, ranges, _) in asked.Values)
             {
-                seen.Add(id);
-                var range = pinned.TryGetValue(id, out var version) && PackageUsageAnalyzer.ResolveRange(version) is { } pin
-                    ? pin
-                    : ranges.MaxBy(r => r.MinVersion ?? new NuGetVersion(0, 0, 0))!;
-                var resolution = await catalog.ResolveDependenciesAsync(id, range, ct);
-                if (resolution.Version is null)
+                var range = Choose(id, ranges);
+                if (chosen.TryGetValue(id, out var previous) && previous.Range.Equals(range))
                 {
-                    unresolved.Add($"{via} {range.PrettyPrint()}: {resolution.Error}");
+                    choices[id] = previous;
                     continue;
                 }
-                reached.Add(new Reached(id, resolution.Version, via));
-                if (resolution.Error is not null) unresolved.Add($"{via} {resolution.Version}: {resolution.Error}");
-                next.Add(new Node(id, resolution, via));
+                choices[id] = (range, await catalog.ResolveDependenciesAsync(id, range, ct));
+                changed = true;
             }
-            frontier = next;
+            changed |= choices.Count != chosen.Count;
+            chosen = choices;
+            if (!changed || ++round >= MaxRounds)
+            {
+                if (changed) unresolved.Add($"The graph did not settle in {MaxRounds} rounds.");
+                if (frontier.Count > 0) unresolved.Add($"The graph is cut at depth {MaxDepth}.");
+                var reached = new List<Reached>();
+                foreach (var (id, _, via) in asked.Values)
+                {
+                    var (range, package) = chosen[id];
+                    if (package.Version is null)
+                    {
+                        unresolved.Add($"{via} {range.PrettyPrint()}: {package.Error}");
+                        continue;
+                    }
+                    reached.Add(new Reached(id, package.Version, via));
+                    if (package.Error is not null) unresolved.Add($"{via} {package.Version}: {package.Error}");
+                }
+                return new Graph(framework, DependencyResolution.Computed,
+                    reached.OrderBy(r => r.Id, StringComparer.OrdinalIgnoreCase).ToArray(), unresolved);
+            }
         }
-        if (frontier.Count > 0) unresolved.Add($"The graph is cut at depth {MaxDepth}.");
-        return new Graph(framework, DependencyResolution.Computed,
-            reached.OrderBy(r => r.Id, StringComparer.OrdinalIgnoreCase).ToArray(), unresolved);
     }
 
     // --- Lock file
