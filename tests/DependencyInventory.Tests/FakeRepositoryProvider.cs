@@ -24,11 +24,18 @@ internal sealed class FakeRepositoryProvider : IRepositoryProvider
 
     public string Origin => "https://dev.azure.com/acme/project";
 
+    /// <summary>
+    /// A repository whose default branch is <paramref name="branch"/>, unless <paramref name="noDefaultBranch"/>;
+    /// <paramref name="otherBranches"/> exist too, with the same files.
+    /// </summary>
     public FakeRepositoryProvider AddRepository(string name, string? branch = "main",
-        IDictionary<string, string>? files = null, bool disabled = false)
+        IDictionary<string, string>? files = null, bool disabled = false, IEnumerable<string>? otherBranches = null,
+        bool noDefaultBranch = false)
     {
-        Repositories.Add(new Repository(name, name, "project", $"https://example/{name}", disabled));
-        _branches[name] = branch is null ? [] : [new GitBranch(branch, $"{name}-sha")];
+        Repositories.Add(new Repository(name, name, "project", $"https://example/{name}", disabled,
+            noDefaultBranch ? null : branch));
+        _branches[name] = (branch is null ? [] : new[] { new GitBranch(branch, $"{name}-sha") })
+            .Concat((otherBranches ?? []).Select(b => new GitBranch(b, $"{name}-{b}-sha"))).ToArray();
         _files[name] = new Dictionary<string, string>(files ?? new Dictionary<string, string>());
         return this;
     }

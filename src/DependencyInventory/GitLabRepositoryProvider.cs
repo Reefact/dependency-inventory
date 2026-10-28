@@ -68,9 +68,15 @@ public sealed class GitLabRepositoryProvider : IRepositoryProvider
                 GetString(p, "name"),
                 group,
                 GetString(p, "web_url"),
-                archived);
+                archived,
+                DefaultBranch(p));
         }).ToArray();
     }
+
+    /// <summary>The default branch of a listed project; none for an empty repository.</summary>
+    public static string? DefaultBranch(JsonElement project) =>
+        project.TryGetProperty("default_branch", out var branch) && branch.ValueKind == JsonValueKind.String &&
+        branch.GetString() is { Length: > 0 } name ? name : null;
 
     public async Task<IReadOnlyList<GitBranch>> GetBranchesAsync(string repositoryId, CancellationToken ct)
     {

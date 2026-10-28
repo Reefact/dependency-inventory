@@ -8,6 +8,23 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+### Added
+
+- **`--branch` and `--branch-file` choose the branch scanned in each repository**, in `depinv packages` and
+  `depinv frameworks`. `--branch`, repeatable, lists branches in priority order: names, globs such as `release/*`
+  (the highest match in natural order), and `@default` for the repository's default branch. `--branch-file` reads
+  the list from a file, where `[repository]` sections give matching repositories their own list. The scan header
+  prints the branches looked for.
+
+### Changed
+
+- **Without `--branch` or `--branch-file`, each repository is scanned on its default branch**, as set in Azure DevOps
+  or GitLab, instead of the first of main, release (or release/*), develop and dev, then the first branch in
+  alphabetical order. Reports can therefore differ for the same command. The previous order, without its alphabetical
+  fallback, is `--branch main --branch release --branch "release/*" --branch develop --branch dev`.
+- **A repository that has none of the requested branches is reported `NoBranch`** in `repositories.csv`, with the
+  branches looked for, instead of being scanned on another branch.
+
 ### Fixed
 
 - **`depinv feed --help` shows the help again** instead of failing with "Encountered malformed markup tag": the

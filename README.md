@@ -336,7 +336,34 @@ diagnostics.json.
 
 ### Branch selection
 
-A single branch is scanned per repository, in the order main → release (release/* included) → develop → dev → first other branch (alphabetical). There is no fallback to a second branch when no dependency is found.
+A single branch is scanned per repository: its default branch, as set in Azure DevOps or GitLab, unless --branch or --branch-file gives the branches to look for. `depinv packages` and `depinv frameworks` take both options.
+
+--branch, repeatable, lists the branches in priority order; the first one that exists in the repository is scanned:
+
+~~~powershell
+depinv packages --provider azure --url "https://dev.azure.com/Organization/Project" --pattern "Contoso.*" --branch release --branch master --branch "@default"
+~~~
+
+- a name, compared case-insensitively;
+- a glob, such as `release/*`: when several branches match, the highest in natural order is taken (release/1.10 before release/1.9);
+- `@default`: the repository's default branch. Last in the list, it is the fallback for repositories that have none of the other branches.
+
+--branch-file reads the list from a file, one entry per line; blank lines and lines starting with # are ignored. The lines before any section form the list of every repository; a `[repository]` line, a name or a glob, opens a section whose list replaces it for the repositories whose name matches. The first matching section applies; lists are not merged. A repository that matches no section, in a file without a list before its sections, is scanned on its default branch.
+
+~~~text
+# Every repository
+release
+master
+@default
+
+# Libraries
+[core-*]
+master
+~~~
+
+The file is only read when --branch-file names it. --branch and --branch-file cannot be combined. The scan header prints the branches looked for and where they come from.
+
+A repository that has none of the branches of its list, and no `@default` in it, is not scanned: repositories.csv reports it with the NoBranch status and the branches looked for. Without either option, a repository without a default branch (an empty one) is reported NoBranch too. There is no fallback to another branch when no dependency is found.
 
 Both providers read files from each repository's selected commit without cloning it.
 

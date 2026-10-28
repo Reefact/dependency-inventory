@@ -102,8 +102,8 @@ public sealed class PackagesCommand : RepositoryCommand<PackagesSettings>
     }
 
     protected override async Task<int> InventoryAsync(IRepositoryProvider api,
-        IReadOnlyList<Repository> repositories, ScanParallelism parallelism, PackagesSettings settings,
-        CancellationToken cancellationToken)
+        IReadOnlyList<Repository> repositories, BranchPolicy branches, ScanParallelism parallelism,
+        PackagesSettings settings, CancellationToken cancellationToken)
     {
         var matcher = _matcher!;
         var sources = new List<PackageSourceEntry>();
@@ -125,7 +125,7 @@ public sealed class PackagesCommand : RepositoryCommand<PackagesSettings>
 
             var result = await ScanConsole.WithProgressAsync(repositories.Count, progress =>
                 RepositoryScanner.ScanAsync(api, repositories, matcher, settings.Diagnostics,
-                    parallelism, progress, cancellationToken, usage, transitive));
+                    parallelism, progress, cancellationToken, usage, transitive, branches));
             foreach (var failure in catalog.SourceFailures)
                 ScanConsole.Warning($"Package source failure: {failure}");
             return await WriteReportsAsync(api, repositories, settings, matcher, result, cancellationToken);
