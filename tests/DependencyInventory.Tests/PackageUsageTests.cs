@@ -544,7 +544,7 @@ public sealed class PackageUsageTests
     }
 
     [Fact]
-    public void TheCodeOfDisabledConditionalBranchesIsRead()
+    public void CodeDependingOnSymbolsIsConditionalAndCodeNeverCompiledIsIgnored()
     {
         var symbols = SourceCodeParser.Parse("/A.cs", """
             #if NET8_0
@@ -552,6 +552,7 @@ public sealed class PackageUsageTests
             #endif
             class A
             {
+                Always always;
             #if DEBUG
                 Tracer tracer;
             #if TRACE_ALL
@@ -560,13 +561,73 @@ public sealed class PackageUsageTests
             #else
                 void Run() => Logger.Write();
             #endif
+            #if false
+                Never never;
+            #elif true || DEBUG
+                Certain certain;
+            #else
+                Dead dead;
+            #endif
+            #if !(true && false)
+                Negated negated;
+            #endif
             }
             """);
 
-        Assert.Contains("Contoso.Modern", symbols.Imports);
-        Assert.Contains("Tracer", symbols.Names);
-        Assert.Contains("Recorder", symbols.Names);
-        Assert.Contains("Logger", symbols.Names);
+        Assert.Equal(["Always", "Certain", "Negated"], symbols.Names.Order());
+        Assert.Empty(symbols.Imports);
+        var conditional = symbols.Conditional!;
+        Assert.Equal(["Contoso.Modern"], conditional.Imports);
+        Assert.Equal(["Logger", "Recorder", "Tracer", "Write"], conditional.Names.Order());
+        Assert.Equal(["Logger.Write"], conditional.QualifiedNames);
+    }
+
+    [Theory]
+    [InlineData("#if NET8_0", PackageUsage.Undetermined)]
+    [InlineData("#if false", PackageUsage.Unused)]
+    [InlineData("#if true", PackageUsage.Used)]
+    public async Task APackageOnlyReferencedInConditionalCodeIsUndetermined(string condition, PackageUsage expected)
+    {
+        var (feedA, feedB, nugetOrg) = Feeds();
+        var api = new FakeRepositoryProvider().AddRepository("app", files: new Dictionary<string, string>
+        {
+            ["/Worker.csproj"] = Project("Microsoft.NET.Sdk", "Contoso.Messaging@1.0.0"),
+            ["/Worker.cs"] = $$"""
+                class Worker
+                {
+                {{condition}}
+                    global::Contoso.Messaging.Bus bus;
+                #endif
+                }
+                """
+        });
+
+        var (references, diagnostic) = await ScanAsync(api, Catalog(feedA, feedB, nugetOrg));
+
+        Assert.Equal(expected, Assert.Single(references).Usage);
+        if (expected == PackageUsage.Undetermined)
+            Assert.Equal("Only referenced in #if branches depending on symbols: Contoso.Messaging.Bus.",
+                Assert.Single(diagnostic.Usages).Reason);
+    }
+
+    [Fact]
+    public async Task AConditionalUsingMakesTheReferencesItResolvesConditional()
+    {
+        var (feedA, feedB, nugetOrg) = Feeds();
+        var api = new FakeRepositoryProvider().AddRepository("app", files: new Dictionary<string, string>
+        {
+            ["/Worker.csproj"] = Project("Microsoft.NET.Sdk", "Contoso.Messaging@1.0.0"),
+            ["/Worker.cs"] = """
+                #if MESSAGING
+                using Contoso.Messaging;
+                #endif
+                class Worker { Bus bus; }
+                """
+        });
+
+        var (references, _) = await ScanAsync(api, Catalog(feedA, feedB, nugetOrg));
+
+        Assert.Equal(PackageUsage.Undetermined, Assert.Single(references).Usage);
     }
 
     [Theory]
