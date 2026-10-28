@@ -40,6 +40,10 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
     `depinv frameworks`), Details, Url.
 - **Breaking: the Kind column is removed from `dependencies.csv` and `central-versions.csv`**, where it always held
   `Reference` and `CentralVersion`. `report.json`, which holds both kinds, keeps it.
+- **Breaking: the CSV reports are comma-separated**, instead of semicolon-separated. `--csv-delimiter ";"` writes them
+  as before (Excel opens them directly where the decimal separator is a comma, as in French), and
+  `--csv-delimiter tab` separates them with tabs. `depinv feed --versions-from` reads a `dependencies.csv` whatever
+  its separator, older reports included.
 - **`repositories.csv` gives the Commit scanned and the Url of each repository**, as `report.json` does, so that the
   lines of several branches can be told apart.
 

@@ -220,9 +220,13 @@ public static class VersionsFile
         return (requests, skipped);
     }
 
-    /// <summary>Semicolon-separated values; a quoted value may hold ';', '"' (doubled) and line breaks.</summary>
+    /// <summary>
+    /// Values separated by a comma, a semicolon or a tab, whichever the header line uses, as --csv-delimiter allows;
+    /// a quoted value may hold the separator, '"' (doubled) and line breaks.
+    /// </summary>
     public static List<string[]> ParseCsv(string text)
     {
+        var delimiter = Delimiter(text);
         var rows = new List<string[]>();
         var row = new List<string>();
         var value = new System.Text.StringBuilder();
@@ -237,7 +241,7 @@ public static class VersionsFile
                 else quoted = false;
             }
             else if (c == '"') quoted = true;
-            else if (c == ';') { row.Add(value.ToString()); value.Clear(); }
+            else if (c == delimiter) { row.Add(value.ToString()); value.Clear(); }
             else if (c is '\r' or '\n')
             {
                 if (c == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
@@ -251,5 +255,13 @@ public static class VersionsFile
         row.Add(value.ToString());
         if (row.Count > 1 || row[0].Length > 0) rows.Add(row.ToArray());
         return rows;
+    }
+
+    /// <summary>The separator of the header line: column names hold none, so it is the most frequent one.</summary>
+    private static char Delimiter(string text)
+    {
+        var end = text.IndexOfAny(['\r', '\n']);
+        var header = end < 0 ? text : text[..end];
+        return new[] { ',', ';', '\t' }.OrderByDescending(d => header.Count(c => c == d)).First();
     }
 }

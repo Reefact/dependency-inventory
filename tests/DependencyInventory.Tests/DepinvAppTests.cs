@@ -47,6 +47,17 @@ public sealed class DepinvAppTests
         Assert.Equal(2, await DepinvApp.Create().RunAsync(["feed", .. arguments]));
     }
 
+    // An unknown CSV separator stops every inventory with 2 before any credential or network access.
+    [Theory]
+    [InlineData("packages", "--pattern", "A")]
+    [InlineData("frameworks")]
+    [InlineData("feed", "--feed", "f", "--package", "A")]
+    public async Task AnUnknownCsvDelimiterIsRejected(params string[] arguments)
+    {
+        Assert.Equal(2, await DepinvApp.Create().RunAsync([.. arguments, "--provider", "azure", "--url",
+            "https://dev.azure.com/acme/project", "--csv-delimiter", "|"]));
+    }
+
     // Invalid branch options stop both repository inventories with 2 before any credential or network access.
     [Theory]
     [InlineData("packages", "--pattern", "A", "--branch", "main", "--branch-file", "branches.txt")]

@@ -4,7 +4,10 @@ using Spectre.Console.Cli;
 
 namespace DependencyInventory;
 
-/// <summary>Options shared by every command that reads an origin: the origin and its credentials.</summary>
+/// <summary>
+/// Options shared by every command that reads an origin: the origin, its credentials and the separator of the CSV
+/// reports.
+/// </summary>
 public abstract class OriginSettings : CommandSettings
 {
     [CommandOption("--provider <SOURCE>", isRequired: true)]
@@ -19,6 +22,14 @@ public abstract class OriginSettings : CommandSettings
     [Description("Credentials read from a file; .azure-credentials or .gitlab-credentials by default. " +
         "Linux and macOS only: on Windows, use the login command.")]
     public required FlagValue<string?> CredentialsFile { get; init; }
+
+    [CommandOption("--csv-delimiter <DELIMITER>")]
+    [Description("Separator of the CSV reports: , (default), ; or tab.")]
+    [DefaultValue(",")]
+    public string CsvDelimiter { get; init; } = ",";
+
+    /// <summary>The separator --csv-delimiter names, once validated with <see cref="CsvFormat.Delimiter"/>.</summary>
+    public char Delimiter => CsvFormat.Delimiter(CsvDelimiter);
 }
 
 /// <summary>Options shared by every repository inventory: the origin and how its repositories are scanned.</summary>
@@ -88,6 +99,13 @@ public abstract class RepositoryCommand<TSettings> : AsyncCommand<TSettings> whe
 
         var url = settings.Url ?? AnsiConsole.Ask<string>("[yellow]Source URL[/]:");
         try { RepositoryProviderFactory.ValidateOrigin(settings.Provider, url); }
+        catch (ArgumentException ex)
+        {
+            ScanConsole.Error(ex.Message);
+            return 2;
+        }
+
+        try { CsvFormat.Delimiter(settings.CsvDelimiter); }
         catch (ArgumentException ex)
         {
             ScanConsole.Error(ex.Message);

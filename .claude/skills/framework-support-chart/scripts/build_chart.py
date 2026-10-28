@@ -141,13 +141,21 @@ def format_date(value: dt.date, lang: str) -> str:
 
 
 def read_csv(path: Path) -> list[dict]:
-    """depinv CSV: semicolon-separated, UTF-8 with BOM, quoted values may hold ';' and line breaks."""
+    """depinv CSV: UTF-8 with BOM, comma-separated by default (semicolons before depinv 1.0.0, or a semicolon or a tab
+    with --csv-delimiter), quoted values may hold the separator and line breaks."""
     return read_csv_with_columns(path)[1]
+
+
+def csv_delimiter(text: str) -> str:
+    """The separator of the header line: column names hold none, so it is the most frequent one."""
+    header = text.splitlines()[0] if text else ""
+    return max(",;\t", key=header.count)
 
 
 def read_csv_with_columns(path: Path) -> tuple[list[str], list[dict]]:
     """The header and the rows of a depinv CSV; the header is known even without any row."""
-    reader = csv.DictReader(io.StringIO(path.read_text(encoding="utf-8-sig")), delimiter=";")
+    text = path.read_text(encoding="utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text), delimiter=csv_delimiter(text))
     rows = list(reader)
     return list(reader.fieldnames or []), rows
 

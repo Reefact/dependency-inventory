@@ -206,6 +206,19 @@ public sealed class FeedTests
         ], rows);
     }
 
+    // Reports written with any --csv-delimiter, or before 1.0.0 with semicolons, are read alike.
+    [Theory]
+    [InlineData(",")]
+    [InlineData(";")]
+    [InlineData("\t")]
+    public void TheSeparatorIsTheOneOfTheHeaderLine(string delimiter)
+    {
+        var rows = VersionsFile.ParseCsv(
+            $"\uFEFFScope{delimiter}Package{delimiter}Version\n\"a, b; c\"{delimiter}A{delimiter}1.0.0\n");
+
+        Assert.Equal([["Scope", "Package", "Version"], ["a, b; c", "A", "1.0.0"]], rows);
+    }
+
     [Fact]
     public async Task VersionsFromADependenciesCsvSkipThoseWithoutALiteralVersion()
     {
@@ -478,10 +491,10 @@ public sealed class FeedTests
         {
             await ReportWriter.SaveFeedAsync(report, directory, CancellationToken.None);
 
-            Assert.Equal(["Package;Version;Framework", "Stime.Core.Vnext.Messaging;2.0.4;net8.0"],
+            Assert.Equal(["Package,Version,Framework", "Stime.Core.Vnext.Messaging,2.0.4,net8.0"],
                 await File.ReadAllLinesAsync(Path.Combine(directory, "package-frameworks.csv")));
-            Assert.Equal(["Package;Version;Framework;Dependency;VersionRange;Kind",
-                "Stime.Core.Vnext.Messaging;2.0.4;net8.0;Microsoft.AspNetCore.App;;FrameworkReference"],
+            Assert.Equal(["Package,Version,Framework,Dependency,VersionRange,Kind",
+                "Stime.Core.Vnext.Messaging,2.0.4,net8.0,Microsoft.AspNetCore.App,,FrameworkReference"],
                 await File.ReadAllLinesAsync(Path.Combine(directory, "package-dependencies.csv")));
             var packages = VersionsFile.ParseCsv(await File.ReadAllTextAsync(Path.Combine(directory, "packages.csv")));
             Assert.Equal(34, packages[0].Length);
