@@ -21,7 +21,7 @@
   - `ScanConsole.cs`: console output (header, messages, progress bar, summary).
   - `RepositoryProviders.cs`, `AzureDevOpsClient.cs`, `GitLabRepositoryProvider.cs`: Git hosting APIs.
   - `RetryHandler.cs`: HTTP pipeline shared by both clients (retry on transient failures, per-attempt timeout).
-  - `CredentialStore.cs`, `CredentialCommands.cs`: system vault (Windows Credential Manager, Linux Secret Service through `secret-tool`), credential resolution, `login` / `logout` commands.
+  - `CredentialStore.cs`, `CredentialCommands.cs`: system vault (Windows Credential Manager, macOS Keychain, Linux Secret Service through `secret-tool`), credential resolution, `login` / `logout` commands.
   - `CredentialsFile.cs`: credentials file reading (Linux and macOS only).
   - `BranchSelector.cs`: the one branch scanned per repository.
   - `NuGetDependencyParser.cs`: NuGet references extracted from project files.

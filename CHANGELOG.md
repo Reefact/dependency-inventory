@@ -15,6 +15,11 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
   from there, as on Windows. Where no Secret Service can be reached, `login` and `logout` end with the reason and exit
   code 2, and scans print it and ask for the credentials. `--credentials-file` remains available on Linux, for
   unattended runs.
+- **`depinv login` and `depinv logout` store the credentials in the macOS Keychain**, as generic passwords of the
+  default keychain (service: the entry key, account: the login), and scans read them from there. Where the keychain
+  cannot be used, such as a locked keychain in an SSH session, `login` and `logout` end with the reason and exit code
+  2, and scans print it and ask for the credentials. `--credentials-file` remains available on macOS, for unattended
+  runs.
 
 ## [1.0.0-preview.8] - 2026-10-28
 
