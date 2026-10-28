@@ -8,6 +8,12 @@ Releases are cut from a `v*` tag (see [RELEASING.md](RELEASING.md)).
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-10-28
+
+The first release candidate of 1.0.0: its commands, options and report format are those planned for 1.0.0, which
+will only fix what this candidate reveals. From 1.0.0 on, a change that breaks the reports or the options needs a
+new major version; `diagnostics.json` stays outside that commitment.
+
 ### Added
 
 - **`depinv login` and `depinv logout` store the credentials in the Secret Service on Linux** (GNOME Keyring,

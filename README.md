@@ -46,7 +46,7 @@ The command is then available as `depinv` (`depinv --help`). To update it:
 dotnet tool update --global DependencyInventory --prerelease
 ~~~
 
-`--prerelease` is required while only preview versions are published (1.0.0 is not released yet): without it, the install fails with "no stable version". Drop it once a stable version exists.
+`--prerelease` is required while only pre-release versions (previews, then release candidates such as 1.0.0-rc.1) are published, as 1.0.0 is not released yet: without it, the install fails with "no stable version". Drop it once a stable version exists.
 
 It needs the .NET 10 runtime.
 
