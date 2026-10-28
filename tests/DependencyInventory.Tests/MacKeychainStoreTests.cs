@@ -35,6 +35,39 @@ public sealed class MacKeychainStoreTests
     }
 
     [MacKeychainFact]
+    public void AnEntryOfAnotherKeychainOfTheSearchListIsIgnored()
+    {
+        var store = CredentialStores.ForCurrentPlatform()!;
+        var key = $"dependency-inventory:test:{Guid.NewGuid():N}";
+        var other = Path.Combine(Path.GetTempPath(), $"depinv-other-{Guid.NewGuid():N}.keychain");
+        var searchList = Security("list-keychains", "-d", "user").Split('\n',
+            StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(k => k.Trim('"')).ToArray();
+        Security("create-keychain", "-p", "test", other);
+        try
+        {
+            Security("unlock-keychain", "-p", "test", other);
+            // The other keychain comes first in the search list and holds the same service.
+            Security(["list-keychains", "-d", "user", "-s", other, .. searchList]);
+            Security("add-generic-password", "-s", key, "-a", "old@company.com", "-w", "old-pat", other);
+
+            Assert.Null(store.Read(key));
+            Assert.False(store.Delete(key));
+
+            store.Write(key, new RepositoryCredentials("new@company.com", "new-pat"));
+            Assert.Equal(new RepositoryCredentials("new@company.com", "new-pat"), store.Read(key));
+            Assert.True(store.Delete(key));
+
+            Assert.Contains("old-pat", Security("find-generic-password", "-s", key, "-w", other));
+        }
+        finally
+        {
+            store.Delete(key);
+            Security(["list-keychains", "-d", "user", "-s", .. searchList]);
+            Security("delete-keychain", other);
+        }
+    }
+
+    [MacKeychainFact]
     public async Task TheCredentialsFileIsStillAccepted()
     {
         var path = Path.GetTempFileName();
@@ -52,6 +85,23 @@ public sealed class MacKeychainStoreTests
         {
             File.Delete(path);
         }
+    }
+
+    /// <summary>Runs the security command of macOS; its standard output, or a failed assertion.</summary>
+    private static string Security(params string[] arguments)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("security")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        Assert.True(process.ExitCode == 0, $"security {string.Join(' ', arguments)}: {error}");
+        return output.Result;
     }
 }
 

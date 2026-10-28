@@ -361,7 +361,8 @@ public sealed record SecretToolResult(int ExitCode, string Output, string Error)
 /// <summary>
 /// Generic passwords of the macOS default keychain (the login keychain), through the Security framework: the entry
 /// key is the service, the login the account, the PAT the password. An entry is replaced in place, account and
-/// password together, so a failure leaves the previous credentials whole.
+/// password together, so a failure leaves the previous credentials whole. Every operation targets the default
+/// keychain alone: an entry of the same service in another keychain of the search list is ignored.
 /// </summary>
 [SupportedOSPlatform("macos")]
 public sealed class MacKeychainStore : ICredentialStore
@@ -377,9 +378,9 @@ public sealed class MacKeychainStore : ICredentialStore
 
     public bool AcceptsCredentialsFiles => true;
 
-    public RepositoryCredentials? Read(string key)
+    public RepositoryCredentials? Read(string key) => InDefaultKeychain(keychain =>
     {
-        var item = Find(key, out var pat);
+        var item = Find(keychain, key, out var pat);
         if (item == IntPtr.Zero) return null;
         try
         {
@@ -390,21 +391,21 @@ public sealed class MacKeychainStore : ICredentialStore
         {
             CFRelease(item);
         }
-    }
+    });
 
-    public void Write(string key, RepositoryCredentials credentials)
+    public void Write(string key, RepositoryCredentials credentials) => InDefaultKeychain(keychain =>
     {
         var account = Encoding.UTF8.GetBytes(credentials.Login.Length == 0 ? NoLogin : credentials.Login);
         var secret = Encoding.UTF8.GetBytes(credentials.Pat);
         try
         {
-            var item = Find(key, out _);
+            var item = Find(keychain, key, out _);
             if (item == IntPtr.Zero)
             {
                 var service = Encoding.UTF8.GetBytes(key);
-                Check(SecKeychainAddGenericPassword(IntPtr.Zero, (uint)service.Length, service,
+                Check(SecKeychainAddGenericPassword(keychain, (uint)service.Length, service,
                     (uint)account.Length, account, (uint)secret.Length, secret, IntPtr.Zero));
-                return;
+                return true;
             }
 
             var data = Marshal.AllocHGlobal(account.Length);
@@ -429,11 +430,12 @@ public sealed class MacKeychainStore : ICredentialStore
         {
             Array.Clear(secret);
         }
-    }
+        return true;
+    });
 
-    public bool Delete(string key)
+    public bool Delete(string key) => InDefaultKeychain(keychain =>
     {
-        var item = Find(key, out _);
+        var item = Find(keychain, key, out _);
         if (item == IntPtr.Zero) return false;
         try
         {
@@ -444,13 +446,32 @@ public sealed class MacKeychainStore : ICredentialStore
         {
             CFRelease(item);
         }
+    });
+
+    /// <summary>
+    /// Runs the operation on the default keychain, the one entries are added to. Searching without a keychain would
+    /// look through the whole search list, and could read or change an entry of another keychain.
+    /// </summary>
+    private static T InDefaultKeychain<T>(Func<IntPtr, T> operation)
+    {
+        Check(SecKeychainCopyDefault(out var keychain));
+        try
+        {
+            return operation(keychain);
+        }
+        finally
+        {
+            CFRelease(keychain);
+        }
     }
 
-    /// <summary>The entry of the key, whatever its account, and its password; IntPtr.Zero when none exists.</summary>
-    private static IntPtr Find(string key, out string password)
+    /// <summary>
+    /// The entry of the key in the keychain, whatever its account, and its password; IntPtr.Zero when none exists.
+    /// </summary>
+    private static IntPtr Find(IntPtr keychain, string key, out string password)
     {
         var service = Encoding.UTF8.GetBytes(key);
-        var status = SecKeychainFindGenericPassword(IntPtr.Zero, (uint)service.Length, service, 0, null,
+        var status = SecKeychainFindGenericPassword(keychain, (uint)service.Length, service, 0, null,
             out var length, out var data, out var item);
         password = "";
         if (status == ItemNotFound) return IntPtr.Zero;
@@ -528,6 +549,9 @@ public sealed class MacKeychainStore : ICredentialStore
         public uint Count;
         public IntPtr Attributes;
     }
+
+    [DllImport(Security)]
+    private static extern int SecKeychainCopyDefault(out IntPtr keychain);
 
     [DllImport(Security)]
     private static extern int SecKeychainFindGenericPassword(IntPtr keychainOrArray, uint serviceNameLength,
