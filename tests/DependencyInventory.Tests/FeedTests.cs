@@ -683,7 +683,7 @@ public sealed class FeedTests
     }
 
     [Fact]
-    public async Task APackageRedirectedToTheBlobStorageIsReadWithoutTheCredentials()
+    public async Task APackageDownloadRedirectedToBlobStorageSucceedsWithoutTheCredentials()
     {
         // Azure Artifacts answers a package download with HTTP 303 to a signed address of its blob storage.
         const string blob = "https://vsblob.example.com/packages/a.1.0.0.nupkg?sig=signed";
@@ -705,7 +705,7 @@ public sealed class FeedTests
     }
 
     [Fact]
-    public async Task ARedirectionToAnAddressThatIsNotHttpsIsRefused()
+    public async Task ARedirectToAnAddressThatIsNotHttpsIsRefused()
     {
         var server = new StubServer(new()
         {
@@ -717,7 +717,7 @@ public sealed class FeedTests
         await Assert.ThrowsAsync<HttpRequestException>(() => feed.GetPackageAsync("A", "1.0.0", default));
     }
 
-    /// <summary>Answers from a fixed table of URLs, redirections included; any other URL is a 404.</summary>
+    /// <summary>Answers from a fixed table of URLs, redirects included; any other URL is a 404.</summary>
     private sealed class StubServer(Dictionary<string, (HttpStatusCode Status, string Body)> responses,
         Dictionary<string, string>? locations = null) : HttpMessageHandler
     {
