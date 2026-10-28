@@ -181,11 +181,12 @@ td.num { text-align: right; }
 @media (max-width: 640px) {
   :root { --label-w: 150px; --value-w: 28px; --lib-pad: 6px; }
   :root.usage { --value-w: 28px; }
-  .usage .row { height: 42px; align-items: start; padding-top: 4px; }
+  /* The usage text takes a second grid line under the bar and wraps within its width, down to 320px. */
+  .usage .row { height: auto; min-height: 28px; row-gap: 1px; padding: 4px 0; }
   .usage .value .detail { display: none; }
   .usage .below {
-    display: block; position: absolute; left: 0; top: 21px;
-    font-size: 10.5px; color: var(--ink-2); white-space: nowrap;
+    display: block; grid-column: 2; min-width: 0; overflow-wrap: anywhere;
+    font-size: 10.5px; line-height: 1.3; color: var(--ink-2);
   }
   .label { font-size: 10.5px; padding: 4px 6px; }
 }
@@ -315,11 +316,11 @@ DATA.packages.forEach(pkg => {
     const value = el("span", "value" + notUsed, String(v.count));
     value.style.left = pct(v.count);
     track.append(bar, value);
+    row.append(label, track);
     if (DATA.usage) {
       value.appendChild(el("span", "detail", " · " + v.usageLabel));
-      track.appendChild(el("span", "below" + notUsed, v.usageLabel));
+      row.appendChild(el("span", "below" + notUsed, v.usageLabel));
     }
-    row.append(label, track);
     section.appendChild(row);
 
     const tr = el("tr");
